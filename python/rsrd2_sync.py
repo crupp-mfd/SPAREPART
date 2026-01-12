@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
 import os
 import sqlite3
@@ -27,10 +28,74 @@ load_project_dotenv()
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "cache.db"
 
-WAGONS_TABLE = "rsrd_wagons"
-SNAPSHOTS_TABLE = "rsrd_wagon_snapshots"
-JSON_TABLE = "RSRD_WAGON_JSON"
-DETAIL_TABLE = "RSRD_WAGON_DATA"
+BASE_WAGONS_TABLE = "rsrd_wagons"
+BASE_SNAPSHOTS_TABLE = "rsrd_wagon_snapshots"
+BASE_JSON_TABLE = "RSRD_WAGON_JSON"
+BASE_DETAIL_TABLE = "RSRD_WAGON_DATA"
+DEFAULT_ENV = os.getenv("SPAREPART_ENV", "prd").lower()
+ENV_ALIASES = {
+    "live": "prd",
+    "prod": "prd",
+    "prd": "prd",
+    "test": "tst",
+    "tst": "tst",
+}
+ENV_SUFFIXES = {"prd": "_PRD", "tst": "_TST"}
+
+
+@dataclass(frozen=True)
+class RSRDTables:
+    wagons: str
+    snapshots: str
+    json: str
+    detail: str
+
+
+BASE_TABLES = RSRDTables(
+    wagons=BASE_WAGONS_TABLE,
+    snapshots=BASE_SNAPSHOTS_TABLE,
+    json=BASE_JSON_TABLE,
+    detail=BASE_DETAIL_TABLE,
+)
+
+
+def tables_for_suffix(suffix: str | None) -> RSRDTables:
+    suffix = suffix or ""
+    return RSRDTables(
+        wagons=f"{BASE_WAGONS_TABLE}{suffix}",
+        snapshots=f"{BASE_SNAPSHOTS_TABLE}{suffix}",
+        json=f"{BASE_JSON_TABLE}{suffix}",
+        detail=f"{BASE_DETAIL_TABLE}{suffix}",
+    )
+
+
+def tables_for_env(env: str | None) -> RSRDTables:
+    value = (env or DEFAULT_ENV).lower()
+    normalized = ENV_ALIASES.get(value)
+    if not normalized:
+        raise ValueError("Ungültige Umgebung.")
+    return tables_for_suffix(ENV_SUFFIXES[normalized])
+
+
+def _normalize_env(env: str | None) -> str:
+    value = (env or DEFAULT_ENV).lower()
+    normalized = ENV_ALIASES.get(value)
+    if not normalized:
+        raise ValueError("Ungültige Umgebung.")
+    return normalized
+
+
+def resolve_env_value(base: str, env: str | None) -> str:
+    normalized = _normalize_env(env)
+    suffix = "PRD" if normalized == "prd" else "TST"
+    value = os.getenv(f"{base}_{suffix}") or os.getenv(base)
+    if not value:
+        raise RuntimeError(f"Umgebungsvariable {base}_{suffix} fehlt.")
+    return value
+
+
+def resolve_tables(tables: RSRDTables | None) -> RSRDTables:
+    return tables or BASE_TABLES
 BATCH_SIZE = 50  # laut RSRD-Doku maximal 50 Wagen pro Abruf
 DEFAULT_MESSAGE_TYPE = int(os.getenv("RSRD_MESSAGE_TYPE", "6003"))
 DEFAULT_MESSAGE_VERSION = os.getenv("RSRD_MESSAGE_VERSION", "1.0")
@@ -47,10 +112,11 @@ def require_env(key: str) -> str:
     return value
 
 
-def init_db(conn: sqlite3.Connection) -> None:
+def init_db(conn: sqlite3.Connection, tables: RSRDTables | None = None) -> None:
+    tables = resolve_tables(tables)
     conn.execute(
         f"""
-        CREATE TABLE IF NOT EXISTS {WAGONS_TABLE} (
+        CREATE TABLE IF NOT EXISTS {tables.wagons} (
             wagon_id TEXT PRIMARY KEY,
             data_json TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -59,7 +125,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         f"""
-        CREATE TABLE IF NOT EXISTS {SNAPSHOTS_TABLE} (
+        CREATE TABLE IF NOT EXISTS {tables.snapshots} (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             wagon_id TEXT NOT NULL,
             snapshot_at TEXT NOT NULL,
@@ -69,13 +135,13 @@ def init_db(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         f"""
-        CREATE INDEX IF NOT EXISTS idx_{SNAPSHOTS_TABLE}_wagon
-        ON {SNAPSHOTS_TABLE}(wagon_id)
+        CREATE INDEX IF NOT EXISTS idx_{tables.snapshots}_wagon
+        ON {tables.snapshots}(wagon_id)
         """
     )
     conn.execute(
         f"""
-        CREATE TABLE IF NOT EXISTS {JSON_TABLE} (
+        CREATE TABLE IF NOT EXISTS {tables.json} (
             wagon_id TEXT PRIMARY KEY,
             payload_json TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -84,7 +150,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         f"""
-        CREATE TABLE IF NOT EXISTS {DETAIL_TABLE} (
+        CREATE TABLE IF NOT EXISTS {tables.detail} (
             wagon_id TEXT PRIMARY KEY,
             wagon_number_freight TEXT,
             vehicle_contract_number TEXT,
@@ -153,12 +219,19 @@ def extract_wagon_id(dataset_item: Dict[str, Any]) -> str:
     raise ValueError("Konnte WagonNumberFreight nicht ermitteln.")
 
 
-def upsert_wagon(conn: sqlite3.Connection, wagon_id: str, payload: Dict[str, Any], keep_snapshot: bool) -> None:
+def upsert_wagon(
+    conn: sqlite3.Connection,
+    wagon_id: str,
+    payload: Dict[str, Any],
+    keep_snapshot: bool,
+    tables: RSRDTables | None = None,
+) -> None:
+    tables = resolve_tables(tables)
     now = datetime.now(timezone.utc).isoformat()
     data_json = json.dumps(payload, ensure_ascii=False, default=_json_default)
     conn.execute(
         f"""
-        INSERT INTO {WAGONS_TABLE} (wagon_id, data_json, updated_at)
+        INSERT INTO {tables.wagons} (wagon_id, data_json, updated_at)
         VALUES (?, ?, ?)
         ON CONFLICT(wagon_id) DO UPDATE SET
             data_json=excluded.data_json,
@@ -169,7 +242,7 @@ def upsert_wagon(conn: sqlite3.Connection, wagon_id: str, payload: Dict[str, Any
     if keep_snapshot:
         conn.execute(
             f"""
-            INSERT INTO {SNAPSHOTS_TABLE} (wagon_id, snapshot_at, data_json)
+            INSERT INTO {tables.snapshots} (wagon_id, snapshot_at, data_json)
             VALUES (?, ?, ?)
             """,
             (wagon_id, now, data_json),
@@ -189,13 +262,18 @@ def determine_items(response: Any) -> List[Dict[str, Any]]:
     return []
 
 
-def store_json_dataset(conn: sqlite3.Connection, dataset: Dict[str, Any]) -> str:
+def store_json_dataset(
+    conn: sqlite3.Connection,
+    dataset: Dict[str, Any],
+    tables: RSRDTables | None = None,
+) -> str:
+    tables = resolve_tables(tables)
     wagon_id = extract_wagon_id(dataset)
     now = datetime.now(timezone.utc).isoformat()
     data_json = json.dumps(dataset, ensure_ascii=False, default=_json_default)
     conn.execute(
         f"""
-        INSERT INTO {JSON_TABLE} (wagon_id, payload_json, updated_at)
+        INSERT INTO {tables.json} (wagon_id, payload_json, updated_at)
         VALUES (?, ?, ?)
         ON CONFLICT(wagon_id) DO UPDATE SET
             payload_json=excluded.payload_json,
@@ -259,17 +337,17 @@ def _column_name_from_path(path: str) -> str:
     return sanitized.upper()
 
 
-def _ensure_flat_columns(conn: sqlite3.Connection, columns: Iterable[str]) -> None:
+def _ensure_flat_columns(conn: sqlite3.Connection, columns: Iterable[str], table: str) -> None:
     if not columns:
         return
     existing = {
         row[1].upper()
-        for row in conn.execute(f"PRAGMA table_info({DETAIL_TABLE})")
+        for row in conn.execute(f"PRAGMA table_info({table})")
     }
     for column in columns:
         if column.upper() in existing:
             continue
-        conn.execute(f'ALTER TABLE {DETAIL_TABLE} ADD COLUMN "{column}" TEXT')
+        conn.execute(f'ALTER TABLE {table} ADD COLUMN "{column}" TEXT')
         existing.add(column.upper())
 
 
@@ -277,14 +355,15 @@ def _update_flat_columns(
     conn: sqlite3.Connection,
     wagon_id: str,
     flat_values: Dict[str, str],
+    table: str,
 ) -> None:
     if not flat_values:
         return
-    _ensure_flat_columns(conn, flat_values.keys())
+    _ensure_flat_columns(conn, flat_values.keys(), table)
     assignments = ", ".join(f'"{column}" = ?' for column in flat_values)
     params = [flat_values[column] for column in flat_values]
     params.append(wagon_id)
-    conn.execute(f"UPDATE {DETAIL_TABLE} SET {assignments} WHERE wagon_id = ?", params)
+    conn.execute(f"UPDATE {table} SET {assignments} WHERE wagon_id = ?", params)
 
 
 def _to_json(value: Any | None) -> str | None:
@@ -321,12 +400,17 @@ def _normalize_dataset(dataset: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def upsert_dataset(conn: sqlite3.Connection, dataset: Dict[str, Any]) -> None:
+def upsert_dataset(
+    conn: sqlite3.Connection,
+    dataset: Dict[str, Any],
+    tables: RSRDTables | None = None,
+) -> None:
+    tables = resolve_tables(tables)
     row = _normalize_dataset(dataset)
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         f"""
-        INSERT INTO {DETAIL_TABLE} (
+        INSERT INTO {tables.detail} (
             wagon_id,
             wagon_number_freight,
             vehicle_contract_number,
@@ -375,22 +459,28 @@ def upsert_dataset(conn: sqlite3.Connection, dataset: Dict[str, Any]) -> None:
         for path, value in flat_paths.items()
         if path and value is not None
     }
-    _update_flat_columns(conn, row["wagon_id"], flat_values)
+    _update_flat_columns(conn, row["wagon_id"], flat_values, tables.detail)
 
 
-def stage_wagons(wagon_numbers: Sequence[str], keep_snapshots: bool = True) -> List[str]:
+def stage_wagons(
+    wagon_numbers: Sequence[str],
+    keep_snapshots: bool = True,
+    tables: RSRDTables | None = None,
+    env: str | None = None,
+) -> List[str]:
     if not wagon_numbers:
         print("Keine Wagennummern angegeben – nichts zu tun.")
         return []
 
-    wsdl_url = require_env("RSRD_WSDL_URL")
-    soap_user = require_env("RSRD_SOAP_USER")
-    soap_pass = require_env("RSRD_SOAP_PASS")
+    wsdl_url = resolve_env_value("RSRD_WSDL_URL", env)
+    soap_user = resolve_env_value("RSRD_SOAP_USER", env)
+    soap_pass = resolve_env_value("RSRD_SOAP_PASS", env)
     db_path = Path(os.getenv("RSRD_DB_PATH", DEFAULT_DB_PATH))
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     conn = sqlite3.connect(db_path)
-    init_db(conn)
+    tables = resolve_tables(tables)
+    init_db(conn, tables)
     client = make_client(wsdl_url, soap_user, soap_pass)
     staged: List[str] = []
 
@@ -400,8 +490,8 @@ def stage_wagons(wagon_numbers: Sequence[str], keep_snapshots: bool = True) -> L
             items = determine_items(response)
             for item in items:
                 wagon_id = extract_wagon_id(item)
-                upsert_wagon(conn, wagon_id, item, keep_snapshot=keep_snapshots)
-                stage_id = store_json_dataset(conn, item)
+                upsert_wagon(conn, wagon_id, item, keep_snapshot=keep_snapshots, tables=tables)
+                stage_id = store_json_dataset(conn, item, tables=tables)
                 staged.append(stage_id)
             conn.commit()
             print(f"[Batch {idx}] {len(batch)} Wagen synchronisiert.")
@@ -413,13 +503,15 @@ def stage_wagons(wagon_numbers: Sequence[str], keep_snapshots: bool = True) -> L
 def process_rsrd_json(
     wagon_ids: Sequence[str] | None = None,
     limit: int | None = None,
+    tables: RSRDTables | None = None,
 ) -> int:
     db_path = Path(os.getenv("RSRD_DB_PATH", DEFAULT_DB_PATH))
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    init_db(conn)
+    tables = resolve_tables(tables)
+    init_db(conn, tables)
     try:
-        query = f"SELECT wagon_id, payload_json FROM {JSON_TABLE}"
+        query = f"SELECT wagon_id, payload_json FROM {tables.json}"
         params: List[Any] = []
         if wagon_ids:
             placeholders = ",".join("?" for _ in wagon_ids)
@@ -433,7 +525,7 @@ def process_rsrd_json(
         processed = 0
         for row in rows:
             dataset = json.loads(row["payload_json"])
-            upsert_dataset(conn, dataset)
+            upsert_dataset(conn, dataset, tables=tables)
             processed += 1
         conn.commit()
     finally:
@@ -446,6 +538,8 @@ def sync_wagons(
     keep_snapshots: bool = True,
     mode: str = "full",
     process_limit: int | None = None,
+    tables: RSRDTables | None = None,
+    env: str | None = None,
 ) -> Dict[str, int]:
     normalized_mode = (mode or "full").lower()
     if normalized_mode not in {"full", "stage", "process"}:
@@ -454,11 +548,16 @@ def sync_wagons(
     staged_ids: List[str] = []
     processed = 0
     if normalized_mode in {"stage", "full"}:
-        staged_ids = stage_wagons(wagon_numbers, keep_snapshots=keep_snapshots)
+        staged_ids = stage_wagons(
+            wagon_numbers,
+            keep_snapshots=keep_snapshots,
+            tables=tables,
+            env=env,
+        )
     if normalized_mode == "process":
-        processed = process_rsrd_json(limit=process_limit)
+        processed = process_rsrd_json(limit=process_limit, tables=tables)
     elif normalized_mode == "full" and staged_ids:
-        processed = process_rsrd_json(wagon_ids=staged_ids, limit=process_limit)
+        processed = process_rsrd_json(wagon_ids=staged_ids, limit=process_limit, tables=tables)
     return {"staged": len(staged_ids), "processed": processed}
 
 
@@ -490,6 +589,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="Optionales LIMIT für den Verarbeitungsschritt.",
     )
+    parser.add_argument(
+        "--env",
+        default=DEFAULT_ENV,
+        help="Umgebung (prd/tst oder live/test).",
+    )
     return parser.parse_args()
 
 
@@ -508,11 +612,14 @@ def main() -> None:
     wagons = args.wagons or []
     if args.wagons_file:
         wagons.extend(load_wagons_from_file(Path(args.wagons_file)))
+    tables = tables_for_env(args.env)
     stats = sync_wagons(
         wagons,
         keep_snapshots=args.snapshots,
         mode=args.mode,
         process_limit=args.limit,
+        tables=tables,
+        env=args.env,
     )
     print(
         f"RSRD2 Sync abgeschlossen – JSON geladen: {stats['staged']}, verarbeitet: {stats['processed']}"

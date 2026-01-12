@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sqlite3
 from datetime import datetime, timezone
@@ -28,6 +29,15 @@ load_project_dotenv()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "cache.db"
+DEFAULT_ENV = os.getenv("SPAREPART_ENV", "prd").lower()
+ENV_ALIASES = {
+    "live": "prd",
+    "prod": "prd",
+    "prd": "prd",
+    "test": "tst",
+    "tst": "tst",
+}
+ENV_SUFFIXES = {"prd": "_PRD", "tst": "_TST"}
 DEFAULT_TABLE = "RSRD_ERP_WAGONNO"
 DEFAULT_SQL = """
 SELECT SERN
@@ -109,6 +119,14 @@ def fetch_wagons(args: argparse.Namespace) -> List[Dict[str, str]]:
     return rows
 
 
+def _table_for_env(env: str | None) -> str:
+    value = (env or DEFAULT_ENV).lower()
+    normalized = ENV_ALIASES.get(value)
+    if not normalized:
+        raise ValueError("Ungültige Umgebung.")
+    return f"{DEFAULT_TABLE}{ENV_SUFFIXES[normalized]}"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Lädt ERP-Wagennummern in SQLite")
     parser.add_argument("--ionapi", help="Pfad zur Compass .ionapi Datei")
@@ -119,7 +137,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sql", default=DEFAULT_SQL, help="SQL-Statement für den Wagon-Export")
     parser.add_argument("--limit", type=int, help="Optionales LIMIT für Compass")
     parser.add_argument("--sqlite-db", default=str(DEFAULT_DB_PATH), help="Pfad zur SQLite DB")
-    parser.add_argument("--table", default=DEFAULT_TABLE, help="Zieltabelle in SQLite")
+    parser.add_argument("--env", default=DEFAULT_ENV, help="Umgebung (prd/tst oder live/test)")
+    parser.add_argument("--table", default=None, help="Zieltabelle in SQLite")
     parser.add_argument("--append", action="store_true", help="Nicht truncaten, sondern anhängen")
     return parser.parse_args()
 
@@ -132,14 +151,15 @@ def main() -> None:
         return
     db_path = Path(args.sqlite_db)
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    table_name = args.table or _table_for_env(args.env)
     conn = sqlite3.connect(db_path)
     try:
-        ensure_table(conn, args.table, truncate=not args.append)
-        inserted = insert_rows(conn, args.table, rows)
+        ensure_table(conn, table_name, truncate=not args.append)
+        inserted = insert_rows(conn, table_name, rows)
         conn.commit()
     finally:
         conn.close()
-    print(f"{inserted} Wagennummern in {db_path} -> {args.table} gespeichert.")
+    print(f"{inserted} Wagennummern in {db_path} -> {table_name} gespeichert.")
 
 
 if __name__ == "__main__":

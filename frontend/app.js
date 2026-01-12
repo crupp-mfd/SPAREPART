@@ -4,6 +4,13 @@ const progressBar = document.getElementById("progressBar");
 const progressDetail = document.getElementById("progressDetail");
 const loaderPanel = document.getElementById("loaderPanel");
 const loaderOverlay = document.getElementById("loaderOverlay");
+const loaderIo = document.getElementById("loaderIo");
+const loaderSource = document.getElementById("loaderSource");
+const loaderTarget = document.getElementById("loaderTarget");
+const loaderSteps = document.getElementById("loaderSteps");
+const loaderStepsList = document.getElementById("loaderStepsList");
+const loaderStepImageWrap = document.getElementById("loaderStepImageWrap");
+const loaderStepImage = document.getElementById("loaderStepImage");
 const mainMenuBtn = document.getElementById("mainMenuBtn");
 const mainMenu = document.getElementById("mainMenu");
 const envSwitch = document.getElementById("envSwitch");
@@ -12,12 +19,13 @@ const moduleTitle = document.getElementById("moduleTitle");
 const moduleSubtitle = document.getElementById("moduleSubtitle");
 const sparepartModule = document.getElementById("sparepartModule");
 const rsrd2Module = document.getElementById("rsrd2Module");
-const menuItems = document.querySelectorAll(".menu-item[data-module]");
+const menuItems = document.querySelectorAll(".menu-item");
 const headerSearch = document.getElementById("headerSearch");
 const rsrd2LoadErpBtn = document.getElementById("rsrd2LoadErpBtn");
 const rsrd2LoadErpFullBtn = document.getElementById("rsrd2LoadErpFullBtn");
 const rsrd2FetchJsonBtn = document.getElementById("rsrd2FetchJsonBtn");
 const rsrd2ProcessJsonBtn = document.getElementById("rsrd2ProcessJsonBtn");
+const rsrd2CompareBtn = document.getElementById("rsrd2CompareBtn");
 const rsrd2Status = document.getElementById("rsrd2Status");
 const rsrd2Log = document.getElementById("rsrd2Log");
 const tablePanel = document.getElementById("tablePanel");
@@ -28,6 +36,19 @@ const paginationInfo = document.getElementById("paginationInfo");
 const prevBtn = document.getElementById("prevPage");
 const nextBtn = document.getElementById("nextPage");
 const reloadBtn = document.getElementById("reloadBtn");
+// BEGIN WAGON RENNUMBERING
+const wagonRenumberBtn = document.getElementById("wagonRenumberBtn");
+// END WAGON RENNUMBERING
+const mos170AddPropBtn = document.getElementById("mos170AddPropBtn");
+const cms100MwnoBtn = document.getElementById("cms100MwnoBtn");
+const mos100ChgSernBtn = document.getElementById("mos100ChgSernBtn");
+const mos180ApproveBtn = document.getElementById("mos180ApproveBtn");
+const mos050MontageBtn = document.getElementById("mos050MontageBtn");
+const crs335UpdBtn = document.getElementById("crs335UpdBtn");
+const sts046DelBtn = document.getElementById("sts046DelBtn");
+const sts046AddBtn = document.getElementById("sts046AddBtn");
+const mms240UpdBtn = document.getElementById("mms240UpdBtn");
+const cusextAddBtn = document.getElementById("cusextAddBtn");
 const pageSizeSelect = document.getElementById("pageSizeSelect");
 const wagonsView = document.getElementById("wagonsView");
 const objstrkView = document.getElementById("objstrkView");
@@ -35,6 +56,15 @@ const swapView = document.getElementById("swapView");
 const objstrkHead = document.getElementById("objstrkHead");
 const objstrkBody = document.getElementById("objstrkBody");
 const objstrkMeta = document.getElementById("objstrkMeta");
+const renumberFields = document.getElementById("renumberFields");
+const renumberItnoInput = document.getElementById("renumberItno");
+const renumberItnoOptions = document.getElementById("renumberItnoOptions");
+const renumberSernInput = document.getElementById("renumberSern");
+const renumberDateInput = document.getElementById("renumberDate");
+const renumberTypeSelect = document.getElementById("renumberType");
+const renumberSernHint = document.getElementById("renumberSernHint");
+const renumberExecuteBtn = document.getElementById("renumberExecuteBtn");
+const renumberInstallBtn = document.getElementById("renumberInstallBtn");
 const backToWagonsBtn = document.getElementById("backToWagonsBtn");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
 const expandAllBtn = document.getElementById("expandAllBtn");
@@ -93,12 +123,14 @@ const CHUNK_SIZE = 150;
 const MIN_OVERLAY_MS = 900;
 const PARTS_PAGE_SIZE = 10;
 const SWAP_PAGE_SIZE = 10;
-const RSRD2_LOG_LIMIT = 80;
+const RSRD2_LOG_LIMIT = 400;
 const RSRD2_JOB_POLL_MS = 1500;
 const rsrd2JobOffsets = {};
 const COLUMN_ORDER = [
   "SERIENNUMMER",
   "BAUREIHE",
+  "ACRF",
+  "ACMC",
   "WAGEN-TYP",
   "KUNDEN-NUMMER",
   "KUNDEN-NAME",
@@ -110,6 +142,8 @@ const COLUMN_ORDER = [
 const COLUMN_LABELS = {
   "SERIENNUMMER": "Seriennummer",
   "BAUREIHE": "Modellreihe",
+  "ACRF": "ACRF",
+  "ACMC": "ACMC",
   "WAGEN-TYP": "Modell-Typ",
   "KUNDEN-NUMMER": "Kd.Nr.",
   "KUNDEN-NAME": "Kundenname",
@@ -118,7 +152,10 @@ const COLUMN_LABELS = {
   "OBJSTRK": "ObjStrk",
 };
 
-const OBJSTRK_COLUMNS = ["MFGL", "TX40", "ITDS", "ITNO", "SER2", "MVA1", "ERSATZ_ITNO", "ERSATZ_SERN", "PARTS"];
+const OBJSTRK_COLUMNS_BY_MODULE = {
+  sparepart: ["MFGL", "TX40", "ITDS", "ITNO", "SER2", "MVA1", "ERSATZ_ITNO", "ERSATZ_SERN", "PARTS"],
+  wagenumbau: ["MFGL", "TX40", "ITDS", "ITNO", "SER2"],
+};
 const OBJSTRK_SEARCH_COLUMNS = ["TX40", "ITDS"];
 const OBJSTRK_FIELD_SOURCES = {
   MFGL: ["CFGL", "MFGL"],
@@ -152,9 +189,15 @@ const withEnv = (url) => `${url}${url.includes("?") ? "&" : "?"}env=${encodeURIC
 const MODULE_META = {
   sparepart: {
     title: "MFD Automation",
-    subtitle: "SPAREPART · Objektstrukturtausch / Wagenumbau",
+    subtitle: "SPAREPART · Objektstrukturtausch",
     showSearch: true,
     loaderSubtitle: "Objektstrukturtausch",
+  },
+  wagenumbau: {
+    title: "MFD Automation",
+    subtitle: "SPAREPART · Wagenumbau",
+    showSearch: true,
+    loaderSubtitle: "Wagenumbau",
   },
   rsrd2: {
     title: "MFD Rail Automatisation",
@@ -163,6 +206,23 @@ const MODULE_META = {
     loaderSubtitle: "RSRD2 Sync",
   },
 };
+const WAGON_MODULES = {
+  sparepart: {
+    table: "wagons",
+    metaKey: "wagons",
+    reloadUrl: "/api/reload",
+    reloadOnStart: false,
+    includeSpareparts: true,
+  },
+  wagenumbau: {
+    table: "Wagenumbau_Wagons",
+    metaKey: "wagenumbau_wagons",
+    reloadUrl: "/api/reload",
+    reloadOnStart: true,
+    includeSpareparts: false,
+  },
+};
+const getObjStrkColumns = () => OBJSTRK_COLUMNS_BY_MODULE[currentModule] || OBJSTRK_COLUMNS_BY_MODULE.sparepart;
 const escapeHtml = (value) =>
   String(value).replace(/[&<>"']/g, (ch) =>
     ({
@@ -173,6 +233,65 @@ const escapeHtml = (value) =>
       "'": "&#39;",
     }[ch] || ch),
   );
+
+let envMeta = null;
+let envMetaPromise = null;
+const expectedMetaEnv = () => (getEnvParam() === "live" ? "prd" : "tst");
+
+const refreshEnvMeta = async () => {
+  if (!envMetaPromise) {
+    envMetaPromise = fetchJSON(withEnv("/api/meta/targets"))
+      .then((data) => {
+        envMeta = data || null;
+        return envMeta;
+      })
+      .catch((error) => {
+        console.error("Konnte Metadaten nicht laden", error);
+        envMeta = null;
+        return null;
+      })
+      .finally(() => {
+        envMetaPromise = null;
+      });
+  }
+  return envMetaPromise;
+};
+
+const ensureEnvMeta = async () => {
+  if (envMeta && envMeta.env === expectedMetaEnv()) return envMeta;
+  return refreshEnvMeta();
+};
+
+const formatOverlayValue = (value) => {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean).join(" + ");
+  }
+  return value || "";
+};
+
+const buildSqliteUrl = (tableName) => {
+  const base = envMeta?.urls?.sqlite || "";
+  if (!base) return "";
+  return tableName ? `${base}#${tableName}` : base;
+};
+
+const getWagonModuleConfig = (module) => WAGON_MODULES[module] || WAGON_MODULES.sparepart;
+const getWagonTableMeta = (module) => envMeta?.tables?.[getWagonModuleConfig(module).metaKey];
+const withTable = (url, tableName) =>
+  `${url}${url.includes("?") ? "&" : "?"}table=${encodeURIComponent(tableName)}`;
+
+const setOverlayContext = ({ source, target }) => {
+  if (!loaderSource || !loaderTarget || !loaderIo) return;
+  const sourceText = formatOverlayValue(source);
+  const targetText = formatOverlayValue(target);
+  loaderSource.textContent = sourceText || "-";
+  loaderTarget.textContent = targetText || "-";
+  loaderIo.classList.toggle("hidden", !sourceText && !targetText);
+};
+
+const clearOverlayContext = () => {
+  setOverlayContext({ source: "", target: "" });
+};
 
 let allWagons = [];
 let wagons = [];
@@ -187,7 +306,15 @@ let objStrkSearchText = "";
 let swapRows = [];
 let swapPage = 1;
 let swapSelected = new Set();
-let currentModule = "sparepart";
+const getInitialModule = () => {
+  const params = new URLSearchParams(window.location.search);
+  const paramModule = params.get("module");
+  const bodyModule = document.body?.dataset?.defaultModule;
+  if (paramModule === "rsrd2" || paramModule === "wagenumbau") return paramModule;
+  if (bodyModule === "rsrd2" || bodyModule === "wagenumbau") return bodyModule;
+  return "sparepart";
+};
+let currentModule = getInitialModule();
 let currentView = "wagons";
 let rsrd2Loaded = false;
 let currentPartsEqtp = "";
@@ -198,6 +325,14 @@ let sparePartsOptions = { item: [], serial: [], facility: [], bin: [] };
 let partsDragState = null;
 let partsResizeState = null;
 let partsFilterTimer = null;
+let renumberCheckTimer = null;
+let renumberJobId = null;
+let renumberJobTimer = null;
+let renumberResultCount = 0;
+let renumberJobMode = null;
+let renumberSequence = null;
+let renumberSequenceIndex = -1;
+let renumberSequenceTransition = false;
 let currentWagonItem = "";
 let currentWagonSerial = "";
 let currentPartsNodeId = null;
@@ -216,7 +351,10 @@ const showOverlay = () => {
 const hideOverlay = () => {
   const elapsed = Date.now() - overlayShownAt;
   const remaining = Math.max(0, MIN_OVERLAY_MS - elapsed);
-  window.setTimeout(() => loaderOverlay.classList.add("hidden"), remaining);
+  window.setTimeout(() => {
+    loaderOverlay.classList.add("hidden");
+    clearOverlayContext();
+  }, remaining);
 };
 
 const setIndeterminate = (enabled) => {
@@ -235,7 +373,146 @@ const updateProgress = (value, total) => {
   const safeTotal = Math.max(total, 1);
   const percent = Math.min(100, Math.round((value / safeTotal) * 100));
   progressBar.style.width = `${percent}%`;
-  progressDetail.textContent = `${value} / ${total}`;
+  const stepInfo = getSequenceStepInfo();
+  progressDetail.textContent = stepInfo
+    ? `${stepInfo.index}/${stepInfo.total} - ${value} / ${total}`
+    : `${value} / ${total}`;
+};
+
+const resetProgress = () => {
+  if (!progressBar || !progressDetail) return;
+  progressBar.style.width = "0%";
+  progressDetail.textContent = "0 / 0";
+};
+
+const buildRenumberSequence = () => [
+  { label: "MOS125 Ausbau", endpoint: "/api/renumber/run", mode: "out" },
+  { label: "WAGEN UMNUMMERIEREN", endpoint: "/api/renumber/wagon", mode: "wagon_renumber" },
+  { label: "MOS170 AddProp", endpoint: "/api/renumber/mos170", mode: "mos170" },
+  { label: "MOS170 PLPN", endpoint: "/api/renumber/mos170/plpn", mode: "mos170_plpn" },
+  { label: "MOS100 Chg_SERN", endpoint: "/api/renumber/mos100", mode: "mos100" },
+  { label: "MOS180 Approve", endpoint: "/api/renumber/mos180", mode: "mos180" },
+  { label: "MOS050 Montage", endpoint: "/api/renumber/mos050", mode: "mos050" },
+  { label: "STS046 DelGenItem", endpoint: "/api/renumber/sts046", mode: "sts046" },
+  { label: "STS046 AddGenItem", endpoint: "/api/renumber/sts046/add", mode: "sts046_add" },
+  { label: "MMS240 Upd", endpoint: "/api/renumber/mms240", mode: "mms240" },
+  { label: "CUSEXT AddFieldValue", endpoint: "/api/renumber/cusext", mode: "cusext" },
+  { label: "MOS125 Einbau", endpoint: "/api/renumber/install", mode: "in" },
+];
+
+const getSequenceStepInfo = () => {
+  if (!renumberSequence || renumberSequenceIndex < 0) return null;
+  const step = renumberSequence[renumberSequenceIndex];
+  if (!step) return null;
+  return { index: renumberSequenceIndex + 1, total: renumberSequence.length, label: step.label };
+};
+
+const formatSequenceStatus = (stepInfo, detail) => {
+  if (!stepInfo) return detail;
+  const prefix = `Schritt ${stepInfo.index}/${stepInfo.total}: ${stepInfo.label}`;
+  if (!detail) return prefix;
+  return `${prefix} - ${detail}`;
+};
+
+const formatSequenceStatusLine = (stepInfo, processed, total) => {
+  if (!stepInfo) return "";
+  const base = `Schritt ${stepInfo.index}/${stepInfo.total}: ${stepInfo.label}`;
+  if (total > 0) {
+    return `${base} · ${processed}/${total}`;
+  }
+  return base;
+};
+
+const renderSequenceSteps = () => {
+  if (!loaderSteps || !loaderStepsList) return;
+  if (!renumberSequence || !renumberSequence.length) {
+    loaderSteps.classList.add("hidden");
+    loaderStepsList.innerHTML = "";
+    if (loaderStepImageWrap) {
+      loaderStepImageWrap.classList.add("hidden");
+      loaderStepImageWrap.style.marginTop = "0px";
+    }
+    if (loaderStepImage) {
+      loaderStepImage.removeAttribute("src");
+      loaderStepImage.alt = "";
+    }
+    return;
+  }
+  loaderSteps.classList.remove("hidden");
+  const activeIndex = Math.max(renumberSequenceIndex, 0);
+  loaderStepsList.innerHTML = renumberSequence
+    .map((step, index) => {
+      const isActive = index === activeIndex;
+      const isDone = index < activeIndex;
+      const classes = ["loader-step"];
+      if (isActive) classes.push("loader-step--active");
+      if (isDone) classes.push("loader-step--done");
+      const indexLabel = String(index + 1).padStart(2, "0");
+      return `
+        <li class="${classes.join(" ")}">
+          <span class="loader-step-index">${indexLabel}</span>
+          <span class="loader-step-dot"></span>
+          <span>${step.label}</span>
+        </li>`;
+    })
+    .join("");
+  if (loaderStepImageWrap && loaderStepImage) {
+    const imageIndex = Math.min(Math.floor(activeIndex / 2) + 1, 6);
+    loaderStepImage.src = `/bilder/${imageIndex}-Bild.png`;
+    loaderStepImage.alt = `Schritt ${imageIndex}: ${renumberSequence[activeIndex]?.label || ""}`;
+    loaderStepImageWrap.classList.remove("hidden");
+    loaderStepImageWrap.style.marginTop = "0px";
+  }
+};
+
+const startRenumberSequenceStep = async (index) => {
+  if (!renumberSequence || index < 0 || index >= renumberSequence.length) return;
+  const step = renumberSequence[index];
+  renumberSequenceIndex = index;
+  renumberJobMode = step.mode;
+  renderSequenceSteps();
+  renumberResultCount = 0;
+  resetProgress();
+  setIndeterminate(true);
+  setStatus(formatSequenceStatus(getSequenceStepInfo(), "wird gestartet"));
+  const runResp = await fetch(withEnv(step.endpoint), { method: "POST" });
+  if (!runResp.ok) {
+    const text = await runResp.text();
+    throw new Error(text || `${step.label} fehlgeschlagen`);
+  }
+  const runData = await runResp.json();
+  renumberJobId = runData.job_id || null;
+  if (!renumberJobId) {
+    throw new Error("Kein Job-ID erhalten.");
+  }
+  if (!renumberJobTimer) {
+    renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+  }
+  if (!renumberSequenceTransition) {
+    await pollRenumberJob();
+  }
+};
+
+const startRenumberSequence = async () => {
+  renumberSequence = buildRenumberSequence();
+  renumberSequenceIndex = -1;
+  renumberSequenceTransition = false;
+  if (loaderSubtitle) {
+    loaderSubtitle.textContent = "Wagenumbau Ablauf";
+  }
+  renderSequenceSteps();
+  if (renumberJobTimer) {
+    clearInterval(renumberJobTimer);
+    renumberJobTimer = null;
+  }
+  await startRenumberSequenceStep(0);
+};
+
+const stopRenumberSequence = () => {
+  renumberSequence = null;
+  renumberSequenceIndex = -1;
+  renumberSequenceTransition = false;
+  renderSequenceSteps();
 };
 
 const fetchJSON = async (url) => {
@@ -277,16 +554,65 @@ const showSwapDbView = () => {
 };
 
 const applyModuleVisibility = () => {
+  const showSparepartModule = currentModule === "sparepart" || currentModule === "wagenumbau";
   if (sparepartModule) {
-    sparepartModule.classList.toggle("hidden", currentModule !== "sparepart");
+    sparepartModule.classList.toggle("hidden", !showSparepartModule);
   }
   if (rsrd2Module) {
     rsrd2Module.classList.toggle("hidden", currentModule !== "rsrd2");
   }
 };
 
+const resolveModule = (nextModule) => {
+  if (nextModule === "rsrd2") return "rsrd2";
+  if (nextModule === "wagenumbau") return "wagenumbau";
+  return "sparepart";
+};
+
+const reloadWagonTable = async (config) => {
+  const table = config.table || WAGON_MODULES.sparepart.table;
+  const resp = await fetch(withEnv(withTable(config.reloadUrl, table)), { method: "POST" });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(text || "Reload fehlgeschlagen");
+  }
+  return resp;
+};
+
+const startModuleWorkflow = async ({ skipReload = false } = {}) => {
+  if (currentModule === "rsrd2") {
+    if (!rsrd2Loaded) {
+      loadRsrd2Wagons();
+    }
+    return;
+  }
+  const config = getWagonModuleConfig(currentModule);
+  try {
+    await ensureEnvMeta();
+    showOverlay();
+    if (config.reloadOnStart && !skipReload) {
+      setOverlayContext({
+        source: envMeta?.urls?.compass,
+        target: buildSqliteUrl(getWagonTableMeta(currentModule)),
+      });
+      setStatus("Datenbank wird neu geladen ...");
+      setIndeterminate(true);
+      await reloadWagonTable(config);
+    }
+    setOverlayContext({
+      source: buildSqliteUrl(getWagonTableMeta(currentModule)),
+      target: window.location.origin,
+    });
+    await loadWagons(config.table);
+    showTable();
+  } catch (error) {
+    console.error(error);
+    showError(error.message || "Unbekannter Fehler");
+  }
+};
+
 const setModule = (nextModule, force = false) => {
-  const resolved = nextModule === "rsrd2" ? "rsrd2" : "sparepart";
+  const resolved = resolveModule(nextModule);
   if (!force && resolved === currentModule) return;
   currentModule = resolved;
   const meta = MODULE_META[resolved] || MODULE_META.sparepart;
@@ -303,11 +629,28 @@ const setModule = (nextModule, force = false) => {
     headerSearch.classList.toggle("hidden", !meta.showSearch);
   }
   applyModuleVisibility();
-  if (resolved === "sparepart") {
+  if (resolved === "sparepart" || resolved === "wagenumbau") {
     showWagonsView();
-  } else if (resolved === "rsrd2" && !rsrd2Loaded) {
-    loadRsrd2Wagons();
   }
+  if (openSwapFromWagonsBtn) {
+    openSwapFromWagonsBtn.classList.toggle("hidden", resolved === "wagenumbau");
+  }
+  if (openSwapFromObjBtn) {
+    openSwapFromObjBtn.classList.toggle("hidden", resolved === "wagenumbau");
+  }
+  if (collapseAllBtn) {
+    collapseAllBtn.classList.toggle("hidden", resolved === "wagenumbau");
+  }
+  if (expandAllBtn) {
+    expandAllBtn.classList.toggle("hidden", resolved === "wagenumbau");
+  }
+  if (renumberFields) {
+    renumberFields.classList.toggle("hidden", resolved !== "wagenumbau");
+  }
+  if (resolved !== "wagenumbau") {
+    resetRenumberSernStatus();
+  }
+  startModuleWorkflow();
   menuItems.forEach((btn) => {
     btn.classList.toggle("menu-item--active", btn.dataset.module === resolved);
   });
@@ -324,12 +667,13 @@ const setEnvironment = (envValue) => {
   if (normalized === currentEnv) return;
   currentEnv = normalized;
   window.localStorage.setItem("sparepart.env", currentEnv);
+  envMeta = null;
   swapSelected.clear();
   swapRows = [];
   swapPage = 1;
   currentPage = 1;
   updateEnvSwitch();
-  startLoadingWorkflow();
+  startModuleWorkflow();
 };
 
 const buildObjStrkHierarchy = (rows) => {
@@ -421,10 +765,307 @@ const updateObjStrkSearch = () => {
   }
 };
 
-const loadWagons = async () => {
+const resetRenumberSernStatus = (message = "", isError = false) => {
+  if (renumberSernHint) {
+    renumberSernHint.textContent = message;
+    renumberSernHint.classList.toggle("objstrk-field-hint--error", isError);
+    renumberSernHint.classList.toggle("objstrk-field-hint--ok", !isError && Boolean(message));
+  }
+  if (renumberSernInput) {
+    renumberSernInput.classList.toggle("objstrk-input--error", isError);
+  }
+};
+
+const checkRenumberSerial = async () => {
+  if (currentModule !== "wagenumbau" || !renumberSernInput) return;
+  const value = renumberSernInput.value.trim();
+  if (!value) {
+    resetRenumberSernStatus();
+    return;
+  }
+  try {
+    const table = getWagonModuleConfig("wagenumbau").table;
+    const url = withEnv(withTable(`/api/wagons/exists?sern=${encodeURIComponent(value)}`, table));
+    const data = await fetchJSON(url);
+    if (data.exists) {
+      resetRenumberSernStatus("Seriennummer existiert bereits.", true);
+    } else {
+      resetRenumberSernStatus("Seriennummer frei.", false);
+    }
+  } catch (error) {
+    console.error(error);
+    resetRenumberSernStatus("Prüfung fehlgeschlagen.", true);
+  }
+};
+
+const getTodayDateInputValue = () => {
+  const now = new Date();
+  const offsetMs = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
+};
+
+const updateRenumberItnoOptions = () => {
+  if (currentModule !== "wagenumbau" || !renumberItnoOptions) return;
+  const values = Array.from(
+    new Set(
+      allWagons
+        .map((row) => (row["BAUREIHE"] || "").trim())
+        .filter((value) => value),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
+  renumberItnoOptions.innerHTML = values.map((value) => `<option value="${value}"></option>`).join("");
+};
+
+const getRenumberPayload = () => ({
+  new_baureihe: renumberItnoInput ? renumberItnoInput.value.trim() : "",
+  new_sern: renumberSernInput ? renumberSernInput.value.trim() : "",
+  umbau_datum: renumberDateInput ? renumberDateInput.value : "",
+  umbau_art: renumberTypeSelect ? renumberTypeSelect.value : "",
+});
+
+const isStatusSuccess = (value) => {
+  const normalized = String(value || "").toLowerCase();
+  return normalized.includes("ok") || normalized.includes("success");
+};
+
+const isStatusError = (value) => {
+  const normalized = String(value || "").toLowerCase();
+  return normalized.includes("err") || normalized.includes("fail");
+};
+
+const applyRenumberResults = (results) => {
+  if (!Array.isArray(results) || !results.length) return;
+  const buckets = new Map();
+  const ser2Buckets = new Map();
+  const itnoBuckets = new Map();
+  const used = new Set();
+  const normalizeKeyValue = (value) =>
+    value === null || value === undefined ? "" : String(value).trim();
+  const makeKey = (cfgl, itno, ser2) =>
+    `${normalizeKeyValue(cfgl)}||${normalizeKeyValue(itno)}||${normalizeKeyValue(ser2)}`;
+  const makeCfgrSer2Key = (cfgr, ser2) =>
+    `${normalizeKeyValue(cfgr)}||${normalizeKeyValue(ser2)}`;
+  const makeCfgrItnoKey = (cfgr, itno) =>
+    `${normalizeKeyValue(cfgr)}||${normalizeKeyValue(itno)}`;
+  const pushBucket = (map, key, row) => {
+    const list = map.get(key) || [];
+    list.push(row);
+    map.set(key, list);
+  };
+  const takeRow = (map, key) => {
+    const list = map.get(key);
+    if (!list || !list.length) return null;
+    while (list.length) {
+      const candidate = list.shift();
+      if (!used.has(candidate)) {
+        used.add(candidate);
+        return candidate;
+      }
+    }
+    return null;
+  };
+  objStrkRows.forEach((row) => {
+    const cfgl = normalizeKeyValue(row.MFGL);
+    const itno = normalizeKeyValue(row.ITNO);
+    const ser2 = normalizeKeyValue(row.SER2);
+    pushBucket(buckets, makeKey(cfgl, itno, ser2), row);
+    if (ser2) {
+      pushBucket(ser2Buckets, makeCfgrSer2Key(cfgl, ser2), row);
+    }
+    if (itno) {
+      pushBucket(itnoBuckets, makeCfgrItnoKey(cfgl, itno), row);
+    }
+  });
+  results.forEach((entry) => {
+    const cfgr = normalizeKeyValue(entry.cfgr);
+    const itno = normalizeKeyValue(entry.itno);
+    const ser2 = normalizeKeyValue(entry.ser2);
+    let row = takeRow(buckets, makeKey(cfgr, itno, ser2));
+    if (!row && ser2) {
+      row = takeRow(ser2Buckets, makeCfgrSer2Key(cfgr, ser2));
+    }
+    if (!row && itno) {
+      row = takeRow(itnoBuckets, makeCfgrItnoKey(cfgr, itno));
+    }
+    if (!row) return;
+    if ("out" in entry) {
+      row.OUT = entry.out || "";
+    }
+    if ("in" in entry) {
+      row.IN = entry.in || "";
+    }
+  });
+};
+
+const pollRenumberJob = async () => {
+  if (!renumberJobId) return;
+  if (renumberSequenceTransition) return;
+  try {
+    const job = await fetchJSON(withEnv(`/api/rsrd2/jobs/${renumberJobId}`));
+    const total = Number(job.total || 0);
+    const processed = Number(job.processed || 0);
+    const jobType = job.type || renumberJobMode || "renumber_run";
+    const isMos170Job = jobType === "mos170_addprop" || renumberJobMode === "mos170";
+    const isCms100Job = jobType === "mos170_plpn" || renumberJobMode === "mos170_plpn";
+    const isMos100Job = jobType === "ips_mos100_chgsern" || renumberJobMode === "mos100";
+    const isWagonRenumberJob = jobType === "wagon_renumber" || renumberJobMode === "wagon_renumber";
+    const isMos180Job = jobType === "mos180_approve" || renumberJobMode === "mos180";
+    const isMos050Job = jobType === "mos050_montage" || renumberJobMode === "mos050";
+    const isCrs335Job = jobType === "crs335_updctrlobj" || renumberJobMode === "crs335";
+    const isSts046DelJob = jobType === "sts046_delgenitem" || renumberJobMode === "sts046";
+    const isSts046AddJob = jobType === "sts046_addgenitem" || renumberJobMode === "sts046_add";
+    const isMms240Job = jobType === "mms240_upd" || renumberJobMode === "mms240";
+    const isCusextJob = jobType === "cusext_addfieldvalue" || renumberJobMode === "cusext";
+    const actionLabel =
+      isWagonRenumberJob
+        ? "Wagen umnummerieren"
+        : isMos170Job
+          ? "MOS170"
+          : isCms100Job
+            ? "MOS170 PLPN"
+            : isMos100Job
+              ? "MOS100"
+              : isMos180Job
+                ? "MOS180"
+                : isMos050Job
+                  ? "MOS050"
+                  : isCrs335Job
+                    ? "CRS335"
+                    : isSts046DelJob || isSts046AddJob
+                      ? "STS046"
+                      : isMms240Job
+                        ? "MMS240"
+                        : isCusextJob
+                          ? "CUSEXT"
+                        : jobType === "renumber_install" || renumberJobMode === "in"
+                          ? "Einbau"
+                          : "Ausbau";
+    const logs = Array.isArray(job.logs) ? job.logs : [];
+    const lastLog = logs.length ? logs[logs.length - 1] : "";
+    const stepInfo = getSequenceStepInfo();
+    const statusMessage = renumberSequence
+      ? formatSequenceStatusLine(stepInfo, processed, total)
+      : lastLog
+        ? formatSequenceStatus(stepInfo, lastLog)
+        : total > 0
+          ? formatSequenceStatus(stepInfo, `${actionLabel} ${processed} / ${total}`)
+          : formatSequenceStatus(stepInfo, `${actionLabel} läuft ...`);
+    if (statusMessage) {
+      setStatus(statusMessage);
+    }
+    if (total > 0) {
+      updateProgress(processed, total);
+    }
+    const results = Array.isArray(job.results) ? job.results : [];
+    if (results.length > renumberResultCount) {
+      const newResults = results.slice(renumberResultCount);
+      renumberResultCount = results.length;
+      applyRenumberResults(newResults);
+      renderObjStrkTable();
+    }
+    if (job.status === "success") {
+      if (renumberSequence && renumberSequenceIndex < renumberSequence.length - 1) {
+        renumberSequenceTransition = true;
+        try {
+          await startRenumberSequenceStep(renumberSequenceIndex + 1);
+        } catch (error) {
+          console.error(error);
+          stopRenumberSequence();
+          clearInterval(renumberJobTimer);
+          renumberJobTimer = null;
+          renumberJobId = null;
+          renumberJobMode = null;
+          hideOverlay();
+          if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+          if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+          if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+          if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+          if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+          if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+          if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+          if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+          if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+          if (sts046DelBtn) sts046DelBtn.disabled = false;
+          if (sts046AddBtn) sts046AddBtn.disabled = false;
+          if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+          if (cusextAddBtn) cusextAddBtn.disabled = false;
+        } finally {
+          renumberSequenceTransition = false;
+        }
+        return;
+      }
+      stopRenumberSequence();
+      clearInterval(renumberJobTimer);
+      renumberJobTimer = null;
+      renumberJobId = null;
+      renumberJobMode = null;
+      hideOverlay();
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (sts046DelBtn) sts046DelBtn.disabled = false;
+      if (sts046AddBtn) sts046AddBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+    } else if (job.status === "error") {
+      stopRenumberSequence();
+      clearInterval(renumberJobTimer);
+      renumberJobTimer = null;
+      renumberJobId = null;
+      renumberJobMode = null;
+      hideOverlay();
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (sts046DelBtn) sts046DelBtn.disabled = false;
+      if (sts046AddBtn) sts046AddBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      // Status bleibt in der Verlaufsanzeige sichtbar.
+    }
+  } catch (error) {
+    console.error(error);
+    stopRenumberSequence();
+    clearInterval(renumberJobTimer);
+    renumberJobTimer = null;
+    renumberJobId = null;
+    renumberJobMode = null;
+    hideOverlay();
+    if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+    if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+    if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+    if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+    if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+    if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+    if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+    if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+    if (sts046DelBtn) sts046DelBtn.disabled = false;
+    if (sts046AddBtn) sts046AddBtn.disabled = false;
+    if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+    // Status bleibt in der Verlaufsanzeige sichtbar.
+  }
+};
+
+
+const loadWagons = async (tableName) => {
+  const table = tableName || WAGON_MODULES.sparepart.table;
   setStatus("VERBINDE ...");
   setIndeterminate(true);
-  const countPayload = await fetchJSON(withEnv("/api/wagons/count"));
+  const countPayload = await fetchJSON(withEnv(withTable("/api/wagons/count", table)));
   totalRows = countPayload.total;
   updateProgress(0, totalRows);
 
@@ -433,7 +1074,9 @@ const loadWagons = async () => {
   let fetched = 0;
 
   while (fetched < totalRows) {
-    const url = withEnv(`/api/wagons/chunk?offset=${fetched}&limit=${CHUNK_SIZE}`);
+    const url = withEnv(
+      withTable(`/api/wagons/chunk?offset=${fetched}&limit=${CHUNK_SIZE}`, table),
+    );
     const chunk = await fetchJSON(url);
     wagons = wagons.concat(chunk.rows);
     fetched += chunk.returned;
@@ -506,7 +1149,7 @@ const renderObjStrkHead = () => {
   if (!objstrkHead) return;
   objstrkHead.innerHTML = "";
   const row = document.createElement("tr");
-  OBJSTRK_COLUMNS.forEach((column) => {
+  getObjStrkColumns().forEach((column) => {
     const th = document.createElement("th");
     th.textContent = OBJSTRK_LABELS[column] || column;
      if (column === "PARTS") th.classList.add("objstrk-col-action");
@@ -602,14 +1245,32 @@ const renderPage = () => {
 const renderObjStrkTable = () => {
   if (!objstrkBody) return;
   objstrkBody.innerHTML = "";
+  const columns = getObjStrkColumns();
   const rows = getObjStrkDisplayRows();
   if (!rows.length) {
-    objstrkBody.innerHTML = '<tr><td colspan="6">Keine Objektstruktur gefunden.</td></tr>';
+    objstrkBody.innerHTML = `<tr><td colspan="${columns.length}">Keine Objektstruktur gefunden.</td></tr>`;
     return;
   }
   rows.forEach(({ node, level }) => {
     const tr = document.createElement("tr");
-    OBJSTRK_COLUMNS.forEach((column, index) => {
+    if (currentModule === "wagenumbau") {
+      const inStatus = node.data.IN || "";
+      const outStatus = node.data.OUT || "";
+      if (inStatus) {
+        if (isStatusSuccess(inStatus)) {
+          tr.classList.add("objstrk-row-install-success");
+        } else if (isStatusError(inStatus)) {
+          tr.classList.add("objstrk-row-error");
+        }
+      } else if (outStatus) {
+        if (isStatusSuccess(outStatus)) {
+          tr.classList.add("objstrk-row-success");
+        } else if (isStatusError(outStatus)) {
+          tr.classList.add("objstrk-row-error");
+        }
+      }
+    }
+    columns.forEach((column, index) => {
       const td = document.createElement("td");
       const value = node.data[column] ?? "";
       if (column === "PARTS") {
@@ -1070,6 +1731,11 @@ const removeReplacementSelection = async (nodeId, originalItno, originalSern) =>
 };
 
 const loadSwapData = async () => {
+  await ensureEnvMeta();
+  setOverlayContext({
+    source: buildSqliteUrl(envMeta?.tables?.sparepart_swaps),
+    target: window.location.origin,
+  });
   showOverlay();
   setStatus("LADE TAUSCHDATEN ...");
   setIndeterminate(true);
@@ -1123,6 +1789,12 @@ const appendRsrd2Log = (message, variant = "info") => {
   rsrd2Log.scrollTop = rsrd2Log.scrollHeight;
 };
 
+const clearRsrd2Log = () => {
+  if (!rsrd2Log) return;
+  rsrd2Log.innerHTML = "";
+  rsrd2Log.classList.add("rsrd2-log-empty");
+};
+
 const parseErrorResponse = async (resp) => {
   const text = await resp.text();
   try {
@@ -1140,7 +1812,7 @@ const loadRsrd2Wagons = async (force = false) => {
   if (rsrd2Loaded && !force) return;
   rsrd2Status.textContent = "Lade Wagennummern aus dem Cache ...";
   try {
-    const data = await fetchJSON("/api/rsrd2/wagons?limit=1");
+    const data = await fetchJSON(withEnv("/api/rsrd2/wagons?limit=1"));
     const count = data.total || 0;
     const summary = count
       ? `${count} Datensätze vorhanden (Stand ${formatDateTime(new Date().toISOString())})`
@@ -1279,8 +1951,13 @@ const startRsrdJob = async ({ url, startMessage, successBuilder, afterSuccess })
   }
 };
 
-const loadErpWagons = () =>
-  startRsrdJob({
+const loadErpWagons = async () => {
+  await ensureEnvMeta();
+  setOverlayContext({
+    source: envMeta?.urls?.compass,
+    target: buildSqliteUrl(envMeta?.tables?.rsrd_erp_numbers),
+  });
+  return startRsrdJob({
     url: withEnv("/api/rsrd2/load_erp"),
     startMessage: "Lade Wagennummern aus dem ERP ...",
     successBuilder: (result) => {
@@ -1288,17 +1965,32 @@ const loadErpWagons = () =>
       return `ERP-Wagennummern geladen: ${result?.count_wagons ?? 0}.`;
     },
   });
+};
 
-const loadErpAttributes = () =>
-  startRsrdJob({
+const loadErpAttributes = async () => {
+  await ensureEnvMeta();
+  setOverlayContext({
+    source: envMeta?.urls?.compass,
+    target: buildSqliteUrl(envMeta?.tables?.rsrd_erp_full),
+  });
+  return startRsrdJob({
     url: withEnv("/api/rsrd2/load_erp_full"),
     startMessage: "Lade Wagenattribute aus dem ERP ...",
     successBuilder: (result) => `ERP-Wagenattribute geladen: ${result?.count_full ?? 0} Datensätze.`,
   });
+};
 
-const fetchRsrdJson = () =>
-  runRsrdAction({
-    url: "/api/rsrd2/fetch_json",
+const fetchRsrdJson = async () => {
+  await ensureEnvMeta();
+  setOverlayContext({
+    source: envMeta?.urls?.rsrd_wsdl,
+    target: [
+      buildSqliteUrl(envMeta?.tables?.rsrd?.wagons),
+      buildSqliteUrl(envMeta?.tables?.rsrd?.json),
+    ],
+  });
+  return runRsrdAction({
+    url: withEnv("/api/rsrd2/fetch_json"),
     startMessage: "JSON aus RSRD wird geladen ...",
     successMessage: (data) => `JSON geladen für ${data?.staged ?? 0} Wagen.`,
     onSuccess: async () => {
@@ -1306,24 +1998,129 @@ const fetchRsrdJson = () =>
       await loadRsrd2Wagons(true);
     },
   });
+};
 
-const processRsrdJson = () =>
-  runRsrdAction({
-    url: "/api/rsrd2/process_json",
+const processRsrdJson = async () => {
+  await ensureEnvMeta();
+  setOverlayContext({
+    source: buildSqliteUrl(envMeta?.tables?.rsrd?.json),
+    target: buildSqliteUrl(envMeta?.tables?.rsrd?.detail),
+  });
+  return runRsrdAction({
+    url: withEnv("/api/rsrd2/process_json"),
     startMessage: "Verarbeite JSON in strukturierte Daten ...",
     successMessage: (data) => `JSON verarbeitet für ${data?.processed ?? 0} Wagen.`,
   });
+};
+
+const formatDiffValue = (value) => {
+  if (value === null || value === undefined || value === "") return "leer";
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+};
+
+const extractRsrdFieldName = (uploadField, fallback) => {
+  if (!uploadField) return fallback || "n/a";
+  const parts = uploadField.split("/");
+  let last = parts[parts.length - 1] || "";
+  if (last.includes("(")) {
+    last = last.split("(")[0];
+  }
+  return last || fallback || "n/a";
+};
+
+const DEBUG_RSRD_COMPARE_WAGONS = ["378445949472"];
+
+const compareRsrdData = async () => {
+  if (!rsrd2Status) return;
+  const startText = "Prüfung läuft ...";
+  rsrd2Status.textContent = startText;
+  clearRsrd2Log();
+  appendRsrd2Log(startText, "info");
+  ensureRsrdLoaderSubtitle();
+  await ensureEnvMeta();
+  setOverlayContext({
+    source: [
+      buildSqliteUrl(envMeta?.tables?.rsrd_erp_full),
+      buildSqliteUrl(envMeta?.tables?.rsrd?.detail),
+    ],
+    target: buildSqliteUrl(envMeta?.tables?.rsrd_upload),
+  });
+  showOverlay();
+  setStatus(startText);
+  setIndeterminate(true);
+  try {
+    const resp = await fetch(withEnv("/api/rsrd2/compare?create_upload=true"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wagons: DEBUG_RSRD_COMPARE_WAGONS }),
+    });
+    if (!resp.ok) {
+      const message = await parseErrorResponse(resp);
+      throw new Error(message || "Prüfung fehlgeschlagen.");
+    }
+    const data = await resp.json().catch(() => ({}));
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    const withDiffs = rows.filter((row) => (row.diff_count || 0) > 0);
+    const missing = rows.filter((row) => row.rsrd_missing);
+
+    rows.forEach((row) => {
+      const wagon = row.wagon_number_freight || "unbekannt";
+      if (row.rsrd_missing) {
+        appendRsrd2Log(`Wagen ${wagon}: keine RSRD-Daten gefunden.`, "error");
+        return;
+      }
+      const diffs = Array.isArray(row.differences) ? row.differences : [];
+      const diffCount = diffs.filter((diff) => !diff.equal).length;
+      appendRsrd2Log(`Wagen ${wagon}: ${diffCount} Abweichungen (Detailvergleich).`, "info");
+      diffs.forEach((diff) => {
+        if (diff.equal) return;
+        const erpValue = formatDiffValue(diff.erp);
+        const rsrdValue = formatDiffValue(diff.rsrd);
+        const erpField = diff.erp_field || diff.field || "n/a";
+        const uploadRequirement = diff.upload_requirement || "n/a";
+        const rsrdFieldName = extractRsrdFieldName(diff.upload_field, diff.rsrd_field || diff.field);
+        appendRsrd2Log(
+          `ERP:${erpField}=${erpValue} | RSRD:${rsrdFieldName}=${rsrdValue} | UL: ${uploadRequirement}`,
+          "error",
+        );
+      });
+    });
+
+    const summary = `Prüfung abgeschlossen: ${rows.length} Wagen geprüft, ${withDiffs.length} mit Abweichungen, ${data.created ?? 0} Uploads erstellt.`;
+    rsrd2Status.textContent = summary;
+    appendRsrd2Log(summary, missing.length || withDiffs.length ? "success" : "info");
+  } catch (error) {
+    const fallback = error.message || "Prüfung fehlgeschlagen.";
+    rsrd2Status.textContent = fallback;
+    appendRsrd2Log(fallback, "error");
+  } finally {
+    hideOverlay();
+  }
+};
 
 const syncRsrd2All = async () => {
   if (!rsrd2Status) return;
   rsrd2Status.textContent = "Starte RSRD2-Synchronisation ...";
   appendRsrd2Log("Starte RSRD2-Synchronisation ...", "info");
   ensureRsrdLoaderSubtitle();
+  await ensureEnvMeta();
+  setOverlayContext({
+    source: [
+      envMeta?.urls?.rsrd_wsdl,
+      buildSqliteUrl(envMeta?.tables?.rsrd_erp_numbers),
+    ],
+    target: [
+      buildSqliteUrl(envMeta?.tables?.rsrd?.json),
+      buildSqliteUrl(envMeta?.tables?.rsrd?.detail),
+    ],
+  });
   showOverlay();
   setStatus("RSRD2-Daten werden geladen ...");
   setIndeterminate(true);
   try {
-    const resp = await fetch("/api/rsrd2/sync_all", { method: "POST" });
+    const resp = await fetch(withEnv("/api/rsrd2/sync_all"), { method: "POST" });
     if (!resp.ok) {
       const message = await parseErrorResponse(resp);
       throw new Error(message || "Synchronisation fehlgeschlagen");
@@ -1454,9 +2251,11 @@ const showError = (message) => {
 
 const handleObjStrkResponse = (payload, { mtrl, sern }) => {
   const rows = normalizeObjStrkRows(payload);
+  const columns = getObjStrkColumns();
+  const isFlat = currentModule === "wagenumbau";
   objStrkRows = rows.map((row, index) => {
     const normalized = {};
-    OBJSTRK_COLUMNS.forEach((column) => {
+    columns.forEach((column) => {
       const sources = OBJSTRK_FIELD_SOURCES[column];
       if (sources) {
         let found = "";
@@ -1474,13 +2273,23 @@ const handleObjStrkResponse = (payload, { mtrl, sern }) => {
     });
     normalized.EQTP = row.EQTP ?? row["TEILEART"] ?? "";
     const id = (row.SER2 || "").trim() || `node-${index}`;
-    const parentId = (row.SERN || "").trim() || "";
+    const parentId = isFlat ? "" : (row.SERN || "").trim() || "";
     normalized.__id = id;
     normalized.__parentId = parentId;
     return normalized;
   });
   const count = objStrkRows.length;
   updateObjStrkMeta(count, mtrl, sern);
+  if (currentModule === "wagenumbau") {
+    updateRenumberItnoOptions();
+    if (renumberSernInput) {
+      renumberSernInput.value = (sern || "").trim();
+      checkRenumberSerial();
+    }
+    if (renumberDateInput) {
+      renumberDateInput.value = getTodayDateInputValue();
+    }
+  }
   const { roots, map } = buildObjStrkHierarchy(objStrkRows);
   objStrkRoots = roots;
   objStrkNodesById = map;
@@ -1501,12 +2310,21 @@ const handleObjStrkResponse = (payload, { mtrl, sern }) => {
 const loadObjStrk = async (mtrl, sern) => {
   currentWagonItem = mtrl;
   currentWagonSerial = sern;
+  await ensureEnvMeta();
+  setOverlayContext({
+    source: envMeta?.urls?.mi,
+    target: window.location.origin,
+  });
   showOverlay();
   setStatus("LADE OBJEKTSTRUKTUR ...");
   setIndeterminate(true);
   try {
+    const storeParam =
+      currentModule === "wagenumbau" ? "&store_table=RENUMBER_WAGON" : "";
     const payload = await fetchJSON(
-      withEnv(`/api/objstrk?mtrl=${encodeURIComponent(mtrl)}&sern=${encodeURIComponent(sern)}`)
+      withEnv(
+        `/api/objstrk?mtrl=${encodeURIComponent(mtrl)}&sern=${encodeURIComponent(sern)}${storeParam}`,
+      ),
     );
     handleObjStrkResponse(payload, { mtrl, sern });
   } catch (error) {
@@ -1515,31 +2333,26 @@ const loadObjStrk = async (mtrl, sern) => {
   }
 };
 
-const startLoadingWorkflow = async () => {
-  showOverlay();
-  try {
-    await loadWagons();
-    showTable();
-  } catch (error) {
-    console.error(error);
-    showError(error.message || "Unbekannter Fehler");
-  }
-};
-
 const reloadData = async () => {
   reloadBtn.disabled = true;
   const originalText = reloadBtn.textContent;
   reloadBtn.textContent = "Lädt ...";
   try {
+    await ensureEnvMeta();
+    const config = getWagonModuleConfig(currentModule);
+    const targets = [buildSqliteUrl(getWagonTableMeta(currentModule))];
+    if (config.includeSpareparts) {
+      targets.push(buildSqliteUrl(envMeta?.tables?.spareparts));
+    }
+    setOverlayContext({
+      source: envMeta?.urls?.compass,
+      target: targets,
+    });
     showOverlay();
     setStatus("Datenbank wird neu geladen ...");
     setIndeterminate(true);
-    const resp = await fetch(withEnv("/api/reload"), { method: "POST" });
-    if (!resp.ok) {
-      const text = await resp.text();
-      throw new Error(text || "Reload fehlgeschlagen");
-    }
-    await startLoadingWorkflow();
+    await reloadWagonTable(config);
+    await startModuleWorkflow({ skipReload: true });
   } catch (error) {
     console.error(error);
     showError(error.message || "Neu laden fehlgeschlagen");
@@ -1552,10 +2365,900 @@ const reloadData = async () => {
 initPaginationControls();
 initPageSizeControl();
 reloadBtn.addEventListener("click", reloadData);
+// BEGIN WAGON RENNUMBERING
+if (wagonRenumberBtn) {
+  wagonRenumberBtn.addEventListener("click", async () => {
+    wagonRenumberBtn.disabled = true;
+    if (renumberExecuteBtn) renumberExecuteBtn.disabled = true;
+    if (renumberInstallBtn) renumberInstallBtn.disabled = true;
+    if (mos170AddPropBtn) mos170AddPropBtn.disabled = true;
+    if (cms100MwnoBtn) cms100MwnoBtn.disabled = true;
+    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = true;
+    if (mos180ApproveBtn) mos180ApproveBtn.disabled = true;
+    if (mos050MontageBtn) mos050MontageBtn.disabled = true;
+    if (crs335UpdBtn) crs335UpdBtn.disabled = true;
+    if (sts046DelBtn) sts046DelBtn.disabled = true;
+    if (sts046AddBtn) sts046AddBtn.disabled = true;
+    if (mms240UpdBtn) mms240UpdBtn.disabled = true;
+    if (cusextAddBtn) cusextAddBtn.disabled = true;
+    renumberJobMode = "wagon_renumber";
+    try {
+      await ensureEnvMeta();
+      setOverlayContext({
+        source: envMeta?.urls?.mi,
+        target: window.location.origin,
+      });
+      showOverlay();
+      setStatus("Wagen wird umnummeriert ...");
+      setIndeterminate(true);
+      const runResp = await fetch(withEnv("/api/renumber/wagon"), { method: "POST" });
+      if (!runResp.ok) {
+        const text = await runResp.text();
+        throw new Error(text || "Wagen-Umnummerierung fehlgeschlagen");
+      }
+      const runData = await runResp.json();
+      renumberJobId = runData.job_id || null;
+      renumberResultCount = 0;
+      if (!renumberJobId) {
+        throw new Error("Kein Job-ID erhalten.");
+      }
+      setIndeterminate(false);
+      updateProgress(0, 1);
+      if (renumberJobTimer) {
+        clearInterval(renumberJobTimer);
+      }
+      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+      await pollRenumberJob();
+    } catch (error) {
+      console.error(error);
+      wagonRenumberBtn.disabled = false;
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (sts046DelBtn) sts046DelBtn.disabled = false;
+      if (sts046AddBtn) sts046AddBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      renumberJobMode = null;
+    } finally {
+      if (!renumberJobId) {
+        hideOverlay();
+      }
+    }
+  });
+}
+// END WAGON RENNUMBERING
+if (mos170AddPropBtn) {
+  mos170AddPropBtn.addEventListener("click", async () => {
+    mos170AddPropBtn.disabled = true;
+    if (renumberExecuteBtn) renumberExecuteBtn.disabled = true;
+    if (renumberInstallBtn) renumberInstallBtn.disabled = true;
+    if (wagonRenumberBtn) wagonRenumberBtn.disabled = true;
+    if (cms100MwnoBtn) cms100MwnoBtn.disabled = true;
+    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = true;
+    if (mos180ApproveBtn) mos180ApproveBtn.disabled = true;
+    if (mos050MontageBtn) mos050MontageBtn.disabled = true;
+    if (crs335UpdBtn) crs335UpdBtn.disabled = true;
+    if (sts046DelBtn) sts046DelBtn.disabled = true;
+    if (sts046AddBtn) sts046AddBtn.disabled = true;
+    if (mms240UpdBtn) mms240UpdBtn.disabled = true;
+    if (cusextAddBtn) cusextAddBtn.disabled = true;
+    renumberJobMode = "mos170";
+    try {
+      await ensureEnvMeta();
+      setOverlayContext({
+        source: envMeta?.urls?.mi,
+        target: window.location.origin,
+      });
+      showOverlay();
+      setStatus("MOS170MI AddProp laeuft ...");
+      setIndeterminate(true);
+      const runResp = await fetch(withEnv("/api/renumber/mos170"), { method: "POST" });
+      if (!runResp.ok) {
+        const text = await runResp.text();
+        throw new Error(text || "MOS170MI AddProp fehlgeschlagen");
+      }
+      const runData = await runResp.json();
+      renumberJobId = runData.job_id || null;
+      renumberResultCount = 0;
+      if (!renumberJobId) {
+        throw new Error("Kein Job-ID erhalten.");
+      }
+      setIndeterminate(false);
+      updateProgress(0, 1);
+      if (renumberJobTimer) {
+        clearInterval(renumberJobTimer);
+      }
+      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+      await pollRenumberJob();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.message || "MOS170MI AddProp fehlgeschlagen");
+      mos170AddPropBtn.disabled = false;
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (sts046DelBtn) sts046DelBtn.disabled = false;
+      if (sts046AddBtn) sts046AddBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      renumberJobMode = null;
+    } finally {
+      if (!renumberJobId) {
+        hideOverlay();
+      }
+    }
+  });
+}
+if (cms100MwnoBtn) {
+  cms100MwnoBtn.addEventListener("click", async () => {
+    cms100MwnoBtn.disabled = true;
+    if (renumberExecuteBtn) renumberExecuteBtn.disabled = true;
+    if (renumberInstallBtn) renumberInstallBtn.disabled = true;
+    if (wagonRenumberBtn) wagonRenumberBtn.disabled = true;
+    if (mos170AddPropBtn) mos170AddPropBtn.disabled = true;
+    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = true;
+    if (mos180ApproveBtn) mos180ApproveBtn.disabled = true;
+    if (mos050MontageBtn) mos050MontageBtn.disabled = true;
+    if (crs335UpdBtn) crs335UpdBtn.disabled = true;
+    if (sts046DelBtn) sts046DelBtn.disabled = true;
+    if (sts046AddBtn) sts046AddBtn.disabled = true;
+    if (mms240UpdBtn) mms240UpdBtn.disabled = true;
+    if (cusextAddBtn) cusextAddBtn.disabled = true;
+    renumberJobMode = "mos170_plpn";
+    try {
+      await ensureEnvMeta();
+      setOverlayContext({
+        source: envMeta?.urls?.mi,
+        target: window.location.origin,
+      });
+      showOverlay();
+      setStatus("MOS170 PLPN laeuft ...");
+      setIndeterminate(true);
+      const runResp = await fetch(withEnv("/api/renumber/mos170/plpn"), { method: "POST" });
+      if (!runResp.ok) {
+        const text = await runResp.text();
+        throw new Error(text || "MOS170 PLPN fehlgeschlagen");
+      }
+      const runData = await runResp.json();
+      renumberJobId = runData.job_id || null;
+      renumberResultCount = 0;
+      if (!renumberJobId) {
+        throw new Error("Kein Job-ID erhalten.");
+      }
+      setIndeterminate(false);
+      updateProgress(0, 1);
+      if (renumberJobTimer) {
+        clearInterval(renumberJobTimer);
+      }
+      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+      await pollRenumberJob();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.message || "MOS170 PLPN fehlgeschlagen");
+      cms100MwnoBtn.disabled = false;
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (sts046DelBtn) sts046DelBtn.disabled = false;
+      if (sts046AddBtn) sts046AddBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      renumberJobMode = null;
+    } finally {
+      if (!renumberJobId) {
+        hideOverlay();
+      }
+    }
+  });
+}
+if (mos100ChgSernBtn) {
+  mos100ChgSernBtn.addEventListener("click", async () => {
+    mos100ChgSernBtn.disabled = true;
+    if (renumberExecuteBtn) renumberExecuteBtn.disabled = true;
+    if (renumberInstallBtn) renumberInstallBtn.disabled = true;
+    if (wagonRenumberBtn) wagonRenumberBtn.disabled = true;
+    if (mos170AddPropBtn) mos170AddPropBtn.disabled = true;
+    if (cms100MwnoBtn) cms100MwnoBtn.disabled = true;
+    if (mos180ApproveBtn) mos180ApproveBtn.disabled = true;
+    if (mos050MontageBtn) mos050MontageBtn.disabled = true;
+    if (crs335UpdBtn) crs335UpdBtn.disabled = true;
+    if (sts046DelBtn) sts046DelBtn.disabled = true;
+    if (sts046AddBtn) sts046AddBtn.disabled = true;
+    if (mms240UpdBtn) mms240UpdBtn.disabled = true;
+    if (cusextAddBtn) cusextAddBtn.disabled = true;
+    renumberJobMode = "mos100";
+    try {
+      await ensureEnvMeta();
+      setOverlayContext({
+        source: envMeta?.urls?.mi,
+        target: window.location.origin,
+      });
+      showOverlay();
+      setStatus("MOS100 Chg_SERN laeuft ...");
+      setIndeterminate(true);
+      const runResp = await fetch(withEnv("/api/renumber/mos100"), { method: "POST" });
+      if (!runResp.ok) {
+        const text = await runResp.text();
+        throw new Error(text || "MOS100 Chg_SERN fehlgeschlagen");
+      }
+      const runData = await runResp.json();
+      renumberJobId = runData.job_id || null;
+      renumberResultCount = 0;
+      if (!renumberJobId) {
+        throw new Error("Kein Job-ID erhalten.");
+      }
+      setIndeterminate(false);
+      updateProgress(0, 1);
+      if (renumberJobTimer) {
+        clearInterval(renumberJobTimer);
+      }
+      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+      await pollRenumberJob();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.message || "MOS100 Chg_SERN fehlgeschlagen");
+      mos100ChgSernBtn.disabled = false;
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (sts046DelBtn) sts046DelBtn.disabled = false;
+      if (sts046AddBtn) sts046AddBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      renumberJobMode = null;
+    } finally {
+      if (!renumberJobId) {
+        hideOverlay();
+      }
+    }
+  });
+}
+if (mos180ApproveBtn) {
+  mos180ApproveBtn.addEventListener("click", async () => {
+    mos180ApproveBtn.disabled = true;
+    if (renumberExecuteBtn) renumberExecuteBtn.disabled = true;
+    if (renumberInstallBtn) renumberInstallBtn.disabled = true;
+    if (wagonRenumberBtn) wagonRenumberBtn.disabled = true;
+    if (mos170AddPropBtn) mos170AddPropBtn.disabled = true;
+    if (cms100MwnoBtn) cms100MwnoBtn.disabled = true;
+    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = true;
+    if (mos050MontageBtn) mos050MontageBtn.disabled = true;
+    if (crs335UpdBtn) crs335UpdBtn.disabled = true;
+    if (sts046DelBtn) sts046DelBtn.disabled = true;
+    if (sts046AddBtn) sts046AddBtn.disabled = true;
+    if (mms240UpdBtn) mms240UpdBtn.disabled = true;
+    if (cusextAddBtn) cusextAddBtn.disabled = true;
+    renumberJobMode = "mos180";
+    try {
+      await ensureEnvMeta();
+      setOverlayContext({
+        source: envMeta?.urls?.mi,
+        target: window.location.origin,
+      });
+      showOverlay();
+      setStatus("MOS180MI Approve laeuft ...");
+      setIndeterminate(true);
+      const runResp = await fetch(withEnv("/api/renumber/mos180"), { method: "POST" });
+      if (!runResp.ok) {
+        const text = await runResp.text();
+        throw new Error(text || "MOS180MI Approve fehlgeschlagen");
+      }
+      const runData = await runResp.json();
+      renumberJobId = runData.job_id || null;
+      renumberResultCount = 0;
+      if (!renumberJobId) {
+        throw new Error("Kein Job-ID erhalten.");
+      }
+      setIndeterminate(false);
+      updateProgress(0, 1);
+      if (renumberJobTimer) {
+        clearInterval(renumberJobTimer);
+      }
+      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+      await pollRenumberJob();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.message || "MOS180MI Approve fehlgeschlagen");
+      mos180ApproveBtn.disabled = false;
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (sts046DelBtn) sts046DelBtn.disabled = false;
+      if (sts046AddBtn) sts046AddBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      renumberJobMode = null;
+    } finally {
+      if (!renumberJobId) {
+        hideOverlay();
+      }
+    }
+  });
+}
+if (mos050MontageBtn) {
+  mos050MontageBtn.addEventListener("click", async () => {
+    mos050MontageBtn.disabled = true;
+    if (renumberExecuteBtn) renumberExecuteBtn.disabled = true;
+    if (renumberInstallBtn) renumberInstallBtn.disabled = true;
+    if (wagonRenumberBtn) wagonRenumberBtn.disabled = true;
+    if (mos170AddPropBtn) mos170AddPropBtn.disabled = true;
+    if (cms100MwnoBtn) cms100MwnoBtn.disabled = true;
+    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = true;
+    if (mos180ApproveBtn) mos180ApproveBtn.disabled = true;
+    if (crs335UpdBtn) crs335UpdBtn.disabled = true;
+    if (mms240UpdBtn) mms240UpdBtn.disabled = true;
+    if (cusextAddBtn) cusextAddBtn.disabled = true;
+    renumberJobMode = "mos050";
+    try {
+      await ensureEnvMeta();
+      setOverlayContext({
+        source: envMeta?.urls?.mi,
+        target: window.location.origin,
+      });
+      showOverlay();
+      setStatus("MOS050 Montage laeuft ...");
+      setIndeterminate(true);
+      const runResp = await fetch(withEnv("/api/renumber/mos050"), { method: "POST" });
+      if (!runResp.ok) {
+        const text = await runResp.text();
+        throw new Error(text || "MOS050 Montage fehlgeschlagen");
+      }
+      const runData = await runResp.json();
+      renumberJobId = runData.job_id || null;
+      renumberResultCount = 0;
+      if (!renumberJobId) {
+        throw new Error("Kein Job-ID erhalten.");
+      }
+      setIndeterminate(false);
+      updateProgress(0, 1);
+      if (renumberJobTimer) {
+        clearInterval(renumberJobTimer);
+      }
+      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+      await pollRenumberJob();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.message || "MOS050 Montage fehlgeschlagen");
+      mos050MontageBtn.disabled = false;
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      renumberJobMode = null;
+    } finally {
+      if (!renumberJobId) {
+        hideOverlay();
+      }
+    }
+  });
+}
+if (crs335UpdBtn) {
+  crs335UpdBtn.addEventListener("click", async () => {
+    crs335UpdBtn.disabled = true;
+    if (renumberExecuteBtn) renumberExecuteBtn.disabled = true;
+    if (renumberInstallBtn) renumberInstallBtn.disabled = true;
+    if (wagonRenumberBtn) wagonRenumberBtn.disabled = true;
+    if (mos170AddPropBtn) mos170AddPropBtn.disabled = true;
+    if (cms100MwnoBtn) cms100MwnoBtn.disabled = true;
+    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = true;
+    if (mos180ApproveBtn) mos180ApproveBtn.disabled = true;
+    if (mos050MontageBtn) mos050MontageBtn.disabled = true;
+    if (sts046DelBtn) sts046DelBtn.disabled = true;
+    if (mms240UpdBtn) mms240UpdBtn.disabled = true;
+    if (cusextAddBtn) cusextAddBtn.disabled = true;
+    renumberJobMode = "crs335";
+    try {
+      await ensureEnvMeta();
+      setOverlayContext({
+        source: envMeta?.urls?.mi,
+        target: window.location.origin,
+      });
+      showOverlay();
+      setStatus("CRS335MI wird ausgefuehrt ...");
+      setIndeterminate(true);
+      const runResp = await fetch(withEnv("/api/renumber/crs335"), { method: "POST" });
+      if (!runResp.ok) {
+        const text = await runResp.text();
+        throw new Error(text || "CRS335MI fehlgeschlagen");
+      }
+      const runData = await runResp.json();
+      renumberJobId = runData.job_id || null;
+      renumberResultCount = 0;
+      if (!renumberJobId) {
+        throw new Error("Kein Job-ID erhalten.");
+      }
+      setIndeterminate(false);
+      updateProgress(0, 1);
+      if (renumberJobTimer) {
+        clearInterval(renumberJobTimer);
+      }
+      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+      await pollRenumberJob();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.message || "CRS335MI fehlgeschlagen");
+      crs335UpdBtn.disabled = false;
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (sts046DelBtn) sts046DelBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      renumberJobMode = null;
+    } finally {
+      if (!renumberJobId) {
+        hideOverlay();
+      }
+    }
+  });
+}
+if (sts046DelBtn) {
+  sts046DelBtn.addEventListener("click", async () => {
+    sts046DelBtn.disabled = true;
+    if (renumberExecuteBtn) renumberExecuteBtn.disabled = true;
+    if (renumberInstallBtn) renumberInstallBtn.disabled = true;
+    if (wagonRenumberBtn) wagonRenumberBtn.disabled = true;
+    if (mos170AddPropBtn) mos170AddPropBtn.disabled = true;
+    if (cms100MwnoBtn) cms100MwnoBtn.disabled = true;
+    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = true;
+    if (mos180ApproveBtn) mos180ApproveBtn.disabled = true;
+    if (mos050MontageBtn) mos050MontageBtn.disabled = true;
+    if (crs335UpdBtn) crs335UpdBtn.disabled = true;
+    if (sts046AddBtn) sts046AddBtn.disabled = true;
+    if (mms240UpdBtn) mms240UpdBtn.disabled = true;
+    if (cusextAddBtn) cusextAddBtn.disabled = true;
+    renumberJobMode = "sts046";
+    try {
+      await ensureEnvMeta();
+      setOverlayContext({
+        source: envMeta?.urls?.mi,
+        target: window.location.origin,
+      });
+      showOverlay();
+      setStatus("STS046MI wird ausgefuehrt ...");
+      setIndeterminate(true);
+      const runResp = await fetch(withEnv("/api/renumber/sts046"), { method: "POST" });
+      if (!runResp.ok) {
+        const text = await runResp.text();
+        throw new Error(text || "STS046MI fehlgeschlagen");
+      }
+      const runData = await runResp.json();
+      renumberJobId = runData.job_id || null;
+      renumberResultCount = 0;
+      if (!renumberJobId) {
+        throw new Error("Kein Job-ID erhalten.");
+      }
+      setIndeterminate(false);
+      updateProgress(0, 1);
+      if (renumberJobTimer) {
+        clearInterval(renumberJobTimer);
+      }
+      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+      await pollRenumberJob();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.message || "STS046MI fehlgeschlagen");
+      sts046DelBtn.disabled = false;
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (sts046AddBtn) sts046AddBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      renumberJobMode = null;
+    } finally {
+      if (!renumberJobId) {
+        hideOverlay();
+      }
+    }
+  });
+}
+if (sts046AddBtn) {
+  sts046AddBtn.addEventListener("click", async () => {
+    sts046AddBtn.disabled = true;
+    if (renumberExecuteBtn) renumberExecuteBtn.disabled = true;
+    if (renumberInstallBtn) renumberInstallBtn.disabled = true;
+    if (wagonRenumberBtn) wagonRenumberBtn.disabled = true;
+    if (mos170AddPropBtn) mos170AddPropBtn.disabled = true;
+    if (cms100MwnoBtn) cms100MwnoBtn.disabled = true;
+    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = true;
+    if (mos180ApproveBtn) mos180ApproveBtn.disabled = true;
+    if (mos050MontageBtn) mos050MontageBtn.disabled = true;
+    if (crs335UpdBtn) crs335UpdBtn.disabled = true;
+    if (sts046DelBtn) sts046DelBtn.disabled = true;
+    if (mms240UpdBtn) mms240UpdBtn.disabled = true;
+    if (cusextAddBtn) cusextAddBtn.disabled = true;
+    renumberJobMode = "sts046_add";
+    try {
+      await ensureEnvMeta();
+      setOverlayContext({
+        source: envMeta?.urls?.mi,
+        target: window.location.origin,
+      });
+      showOverlay();
+      setStatus("STS046MI (Add) wird ausgefuehrt ...");
+      setIndeterminate(true);
+      const runResp = await fetch(withEnv("/api/renumber/sts046/add"), { method: "POST" });
+      if (!runResp.ok) {
+        const text = await runResp.text();
+        throw new Error(text || "STS046MI Add fehlgeschlagen");
+      }
+      const runData = await runResp.json();
+      renumberJobId = runData.job_id || null;
+      renumberResultCount = 0;
+      if (!renumberJobId) {
+        throw new Error("Kein Job-ID erhalten.");
+      }
+      setIndeterminate(false);
+      updateProgress(0, 1);
+      if (renumberJobTimer) {
+        clearInterval(renumberJobTimer);
+      }
+      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+      await pollRenumberJob();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.message || "STS046MI Add fehlgeschlagen");
+      sts046AddBtn.disabled = false;
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (sts046DelBtn) sts046DelBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      renumberJobMode = null;
+    } finally {
+      if (!renumberJobId) {
+        hideOverlay();
+      }
+    }
+  });
+}
+if (mms240UpdBtn) {
+  mms240UpdBtn.addEventListener("click", async () => {
+    mms240UpdBtn.disabled = true;
+    if (renumberExecuteBtn) renumberExecuteBtn.disabled = true;
+    if (renumberInstallBtn) renumberInstallBtn.disabled = true;
+    if (wagonRenumberBtn) wagonRenumberBtn.disabled = true;
+    if (mos170AddPropBtn) mos170AddPropBtn.disabled = true;
+    if (cms100MwnoBtn) cms100MwnoBtn.disabled = true;
+    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = true;
+    if (mos180ApproveBtn) mos180ApproveBtn.disabled = true;
+    if (mos050MontageBtn) mos050MontageBtn.disabled = true;
+    if (crs335UpdBtn) crs335UpdBtn.disabled = true;
+    if (sts046DelBtn) sts046DelBtn.disabled = true;
+    if (sts046AddBtn) sts046AddBtn.disabled = true;
+    if (cusextAddBtn) cusextAddBtn.disabled = true;
+    renumberJobMode = "mms240";
+    try {
+      await ensureEnvMeta();
+      setOverlayContext({
+        source: envMeta?.urls?.mi,
+        target: window.location.origin,
+      });
+      showOverlay();
+      setStatus("MMS240MI wird ausgefuehrt ...");
+      setIndeterminate(true);
+      const runResp = await fetch(withEnv("/api/renumber/mms240"), { method: "POST" });
+      if (!runResp.ok) {
+        const text = await runResp.text();
+        throw new Error(text || "MMS240MI fehlgeschlagen");
+      }
+      const runData = await runResp.json();
+      renumberJobId = runData.job_id || null;
+      renumberResultCount = 0;
+      if (!renumberJobId) {
+        throw new Error("Kein Job-ID erhalten.");
+      }
+      setIndeterminate(false);
+      updateProgress(0, 1);
+      if (renumberJobTimer) {
+        clearInterval(renumberJobTimer);
+      }
+      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+      await pollRenumberJob();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.message || "MMS240MI fehlgeschlagen");
+      mms240UpdBtn.disabled = false;
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (sts046DelBtn) sts046DelBtn.disabled = false;
+      if (sts046AddBtn) sts046AddBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      renumberJobMode = null;
+    } finally {
+      if (!renumberJobId) {
+        hideOverlay();
+      }
+    }
+  });
+}
+if (cusextAddBtn) {
+  cusextAddBtn.addEventListener("click", async () => {
+    cusextAddBtn.disabled = true;
+    if (renumberExecuteBtn) renumberExecuteBtn.disabled = true;
+    if (renumberInstallBtn) renumberInstallBtn.disabled = true;
+    if (wagonRenumberBtn) wagonRenumberBtn.disabled = true;
+    if (mos170AddPropBtn) mos170AddPropBtn.disabled = true;
+    if (cms100MwnoBtn) cms100MwnoBtn.disabled = true;
+    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = true;
+    if (mos180ApproveBtn) mos180ApproveBtn.disabled = true;
+    if (mos050MontageBtn) mos050MontageBtn.disabled = true;
+    if (crs335UpdBtn) crs335UpdBtn.disabled = true;
+    if (sts046DelBtn) sts046DelBtn.disabled = true;
+    if (sts046AddBtn) sts046AddBtn.disabled = true;
+    if (mms240UpdBtn) mms240UpdBtn.disabled = true;
+    renumberJobMode = "cusext";
+    try {
+      await ensureEnvMeta();
+      setOverlayContext({
+        source: envMeta?.urls?.mi,
+        target: window.location.origin,
+      });
+      showOverlay();
+      setStatus("CUSEXTMI wird ausgefuehrt ...");
+      setIndeterminate(true);
+      const runResp = await fetch(withEnv("/api/renumber/cusext"), { method: "POST" });
+      if (!runResp.ok) {
+        const text = await runResp.text();
+        throw new Error(text || "CUSEXTMI fehlgeschlagen");
+      }
+      const runData = await runResp.json();
+      renumberJobId = runData.job_id || null;
+      renumberResultCount = 0;
+      if (!renumberJobId) {
+        throw new Error("Kein Job-ID erhalten.");
+      }
+      setIndeterminate(false);
+      updateProgress(0, 1);
+      if (renumberJobTimer) {
+        clearInterval(renumberJobTimer);
+      }
+      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+      await pollRenumberJob();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.message || "CUSEXTMI fehlgeschlagen");
+      cusextAddBtn.disabled = false;
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (sts046DelBtn) sts046DelBtn.disabled = false;
+      if (sts046AddBtn) sts046AddBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      renumberJobMode = null;
+    } finally {
+      if (!renumberJobId) {
+        hideOverlay();
+      }
+    }
+  });
+}
 if (fulltextInput) {
   fulltextInput.addEventListener("input", () => {
     applyFilters();
     updateObjStrkSearch();
+  });
+}
+if (renumberSernInput) {
+  renumberSernInput.addEventListener("input", () => {
+    if (renumberCheckTimer) {
+      window.clearTimeout(renumberCheckTimer);
+    }
+    renumberCheckTimer = window.setTimeout(checkRenumberSerial, 400);
+  });
+  renumberSernInput.addEventListener("blur", checkRenumberSerial);
+}
+if (renumberExecuteBtn) {
+  renumberExecuteBtn.addEventListener("click", async () => {
+    if (currentModule !== "wagenumbau") return;
+    if (renumberSequence) return;
+    await checkRenumberSerial();
+    const hasError = renumberSernInput?.classList.contains("objstrk-input--error");
+    if (hasError) {
+      window.alert("Neue Seriennummer existiert bereits.");
+      return;
+    }
+    const payload = getRenumberPayload();
+    if (!payload.new_baureihe || !payload.new_sern || !payload.umbau_datum || !payload.umbau_art) {
+      window.alert("Bitte alle Umbaufelder ausfüllen.");
+      return;
+    }
+    renumberExecuteBtn.disabled = true;
+    if (renumberInstallBtn) renumberInstallBtn.disabled = true;
+    if (wagonRenumberBtn) wagonRenumberBtn.disabled = true;
+    if (mos170AddPropBtn) mos170AddPropBtn.disabled = true;
+    if (cms100MwnoBtn) cms100MwnoBtn.disabled = true;
+    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = true;
+    if (mos180ApproveBtn) mos180ApproveBtn.disabled = true;
+    if (mos050MontageBtn) mos050MontageBtn.disabled = true;
+    if (crs335UpdBtn) crs335UpdBtn.disabled = true;
+    if (sts046DelBtn) sts046DelBtn.disabled = true;
+    if (sts046AddBtn) sts046AddBtn.disabled = true;
+    if (mms240UpdBtn) mms240UpdBtn.disabled = true;
+    if (cusextAddBtn) cusextAddBtn.disabled = true;
+    try {
+      const resp = await fetch(withEnv("/api/renumber/update"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(text || "Umbau konnte nicht gespeichert werden");
+      }
+      objStrkRows.forEach((row) => {
+        row.NEW_BAUREIHE = payload.new_baureihe;
+        row.NEW_SERN = payload.new_sern;
+        row.UMBAU_DATUM = payload.umbau_datum;
+        row.UMBAU_ART = payload.umbau_art;
+        row.OUT = "";
+        row.IN = "";
+      });
+      setOverlayContext({
+        source: envMeta?.urls?.mi,
+        target: window.location.origin,
+      });
+      showOverlay();
+      setStatus("Starte Wagenumbau-Ablauf ...");
+      setIndeterminate(true);
+      await startRenumberSequence();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.message || "Umbau speichern fehlgeschlagen");
+      renumberExecuteBtn.disabled = false;
+      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (sts046DelBtn) sts046DelBtn.disabled = false;
+      if (sts046AddBtn) sts046AddBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      renumberJobMode = null;
+      stopRenumberSequence();
+    } finally {
+      if (!renumberJobId) {
+        hideOverlay();
+      }
+    }
+  });
+}
+if (renumberInstallBtn) {
+  renumberInstallBtn.addEventListener("click", async () => {
+    if (currentModule !== "wagenumbau") return;
+    renumberInstallBtn.disabled = true;
+    if (renumberExecuteBtn) renumberExecuteBtn.disabled = true;
+    if (wagonRenumberBtn) wagonRenumberBtn.disabled = true;
+    if (mos170AddPropBtn) mos170AddPropBtn.disabled = true;
+    if (cms100MwnoBtn) cms100MwnoBtn.disabled = true;
+    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = true;
+    if (mos180ApproveBtn) mos180ApproveBtn.disabled = true;
+    if (mos050MontageBtn) mos050MontageBtn.disabled = true;
+    if (crs335UpdBtn) crs335UpdBtn.disabled = true;
+    if (sts046DelBtn) sts046DelBtn.disabled = true;
+    if (sts046AddBtn) sts046AddBtn.disabled = true;
+    if (mms240UpdBtn) mms240UpdBtn.disabled = true;
+    if (cusextAddBtn) cusextAddBtn.disabled = true;
+    renumberJobMode = "in";
+    try {
+      objStrkRows.forEach((row) => {
+        row.IN = "";
+      });
+      setOverlayContext({
+        source: envMeta?.urls?.mi,
+        target: window.location.origin,
+      });
+      showOverlay();
+      setStatus("Führe Einbauten über MOS125MI aus ...");
+      setIndeterminate(true);
+      const runResp = await fetch(withEnv("/api/renumber/install"), { method: "POST" });
+      if (!runResp.ok) {
+        const text = await runResp.text();
+        throw new Error(text || "Einbau fehlgeschlagen");
+      }
+      const runData = await runResp.json();
+      renumberJobId = runData.job_id || null;
+      renumberResultCount = 0;
+      if (!renumberJobId) {
+        throw new Error("Kein Job-ID erhalten.");
+      }
+      setIndeterminate(false);
+      updateProgress(0, 1);
+      if (renumberJobTimer) {
+        clearInterval(renumberJobTimer);
+      }
+      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+      await pollRenumberJob();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.message || "Einbau speichern fehlgeschlagen");
+      renumberInstallBtn.disabled = false;
+      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
+      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
+      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
+      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
+      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
+      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
+      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
+      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
+      if (sts046DelBtn) sts046DelBtn.disabled = false;
+      if (sts046AddBtn) sts046AddBtn.disabled = false;
+      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
+      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      renumberJobMode = null;
+    } finally {
+      if (!renumberJobId) {
+        hideOverlay();
+      }
+    }
   });
 }
 FILTER_FIELDS.forEach(({ input }) => {
@@ -1603,6 +3306,11 @@ if (mainMenuBtn && mainMenu) {
   menuItems.forEach((item) => {
     item.addEventListener("click", () => {
       mainMenu.classList.add("hidden");
+      const targetPage = item.dataset.page;
+      if (targetPage) {
+        window.location.href = targetPage;
+        return;
+      }
       setModule(item.dataset.module || "sparepart");
     });
   });
@@ -1667,6 +3375,11 @@ if (rsrd2FetchJsonBtn) {
 if (rsrd2ProcessJsonBtn) {
   rsrd2ProcessJsonBtn.addEventListener("click", () => {
     processRsrdJson();
+  });
+}
+if (rsrd2CompareBtn) {
+  rsrd2CompareBtn.addEventListener("click", () => {
+    compareRsrdData();
   });
 }
 if (swapPrevPageBtn) {
@@ -1802,4 +3515,3 @@ if (partsResultsBody) {
 }
 setModule(currentModule, true);
 updateEnvSwitch();
-startLoadingWorkflow();
