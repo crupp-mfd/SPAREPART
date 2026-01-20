@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MFD Automation</title>
-    <link rel="stylesheet" href="https://design.infor.com/components/css/ids-enterprise.css" />
-    <link rel="stylesheet" href="/styles.css?v=11" />
+    <link rel="stylesheet" href="/ids-enterprise.css?v=1" />
+    <link rel="stylesheet" href="/styles.css?v=17" />
   </head>
   <body data-default-module="sparepart">
     <div id="loaderOverlay" class="loader-overlay hidden">
@@ -13,6 +13,9 @@
         <h1>MFD Rail</h1>
         <p class="subtitle" id="loaderSubtitle">Objektstrukturtausch</p>
         <div class="status-line" id="statusText">VERBINDE ...</div>
+        <div class="loader-random-image hidden" id="loaderRandomImageWrap">
+          <img id="loaderRandomImage" alt="Statusbild" />
+        </div>
         <div class="loader-steps hidden" id="loaderSteps">
           <div class="loader-steps-title">Ablauf</div>
           <div class="loader-steps-content">
@@ -48,6 +51,7 @@
             <button type="button" class="menu-item menu-item--active" data-module="sparepart">1. Objektstrukturtausch</button>
             <button type="button" class="menu-item" data-module="rsrd2">2. RSRD2 Sync</button>
             <button type="button" class="menu-item" data-page="/wagenumbau.html">3. Bremsenumbau</button>
+            <button type="button" class="menu-item" data-page="/teilenummer.html">4. Teilenummer ändern</button>
           </div>
         </div>
         <div>
@@ -321,6 +325,6 @@
         <div class="modal-resize-handle" id="partsResizeHandle"></div>
       </div>
     </div>
-    <script src="/app.js?v=27" type="module"></script>
+    <script src="/app.js?v=33" type="module"></script>
   </body>
 </html>

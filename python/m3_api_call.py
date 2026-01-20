@@ -21,6 +21,7 @@ DEFAULT_IONAPI_DIR = PROJECT_ROOT / "credentials" / "ionapi"
 DEFAULT_IONAPI_PATH = DEFAULT_IONAPI_DIR / "service_account.ionapi"
 PREFERRED_IONAPI_FILES = [
     "Infor Compass JDBC Driver.ionapi",
+    "MFD_Backend_Python_vNEW.ionapi",
     "MFD_Backend_Python.ionapi",
     "service_account.ionapi",
 ]
@@ -31,11 +32,30 @@ EXAMPLE_PARAMS = {
     "EXPA": "1",
     "MEVA": "1",
 }
+READ_ONLY_M3 = os.getenv("SPAREPART_DISABLE_M3_CALLS", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+}
+READ_CALLS = {
+    ("MOS256MI", "LstAsBuild"),
+    ("CMS100MI", "Lst_PLPN_MWNO"),
+}
 
 
 def _log(message: str, verbose: bool = False) -> None:
     if verbose:
         print(message, file=sys.stderr)
+
+
+def _ensure_m3_calls_allowed(program: str, transaction: str) -> None:
+    if READ_ONLY_M3 and (program, transaction) not in READ_CALLS:
+        allowed = ", ".join(f"{prog}/{tx}" for prog, tx in sorted(READ_CALLS))
+        raise RuntimeError(
+            "M3-Write-Calls sind deaktiviert. "
+            f"Erlaubte Read-Calls: {allowed}"
+        )
 
 
 def find_ionapi_path(explicit_path: Optional[str] = None) -> str:
@@ -109,6 +129,7 @@ def build_base_url(ion_cfg: dict) -> str:
 
 
 def call_m3_mi_get(base_url: str, access_token: str, program: str, transaction: str, params: Optional[Dict] = None) -> dict:
+    _ensure_m3_calls_allowed(program, transaction)
     url = f"{base_url}/M3/m3api-rest/execute/{program}/{transaction}"
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -155,6 +176,7 @@ def main() -> None:
 
     try:
         ion_cfg = load_ionapi_config(ionapi_path)
+        _ensure_m3_calls_allowed(args.program, args.transaction)
         token = get_access_token_service_account(ion_cfg)
         base_url = build_base_url(ion_cfg)
         _log("Access Token erfolgreich erhalten", args.verbose)

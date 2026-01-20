@@ -5,8 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="$ROOT_DIR/.venv"
 ENV_FILE="$ROOT_DIR/.env"
 
+"$ROOT_DIR/scripts/bootstrap.sh"
+
 if [[ ! -d "$VENV_DIR" ]]; then
-  echo "Kein virtuelles Environment gefunden. Bitte zuerst scripts/bootstrap.sh ausführen." >&2
+  echo "Bootstrap konnte kein virtuelles Environment erstellen." >&2
   exit 1
 fi
 

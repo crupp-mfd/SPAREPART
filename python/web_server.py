@@ -52,6 +52,9 @@ DB_PATH = PROJECT_ROOT / "data" / "cache.db"
 API_LOG_PATH = PROJECT_ROOT / "data" / "API.log"
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 IONAPI_DIR = PROJECT_ROOT / "credentials" / "ionapi"
+TST_ENV_DIR = PROJECT_ROOT / "credentials" / "TSTEnv"
+TST_COMPASS_IONAPI = TST_ENV_DIR / "Infor Compass JDBC Driver.ionapi"
+TST_COMPASS_JDBC = TST_ENV_DIR / "infor-compass-jdbc-2020-09.jar"
 DEFAULT_TABLE = "wagons"
 SPAREPARTS_TABLE = "spareparts"
 SPAREPARTS_SWAP_TABLE = "sparepart_swaps"
@@ -69,6 +72,7 @@ RENUMBER_EXTRA_COLUMNS = [
     "UMBAU_ART",
     "PLPN",
     "MWNO",
+    "MOS100_STATUS",
     "MOS180_STATUS",
     "MOS050_STATUS",
     "CRS335_STATUS",
@@ -80,14 +84,38 @@ RENUMBER_EXTRA_COLUMNS = [
     "UPDATED_AT",
     "IN",
     "TIMESTAMP_IN",
+    "ROLLBACK",
+    "TIMESTAMP_ROLLBACK",
 ]
 RSRD_ERP_TABLE = "RSRD_ERP_WAGONNO"
 RSRD_ERP_FULL_TABLE = "RSRD_ERP_DATA"
 RSRD_UPLOAD_TABLE = "RSRD_WAGON_UPLOAD"
+TEILENUMMER_TABLE = "TEILENUMMER"
+TEILENUMMER_TAUSCH_TABLE = "TEILENUMMER_TAUSCH"
+TEILENUMMER_TAUSCH_EXTRA_COLUMNS = [
+    "NITNO",
+    "NSERN",
+    "UMGEBAUT",
+    "TIMESTAMP",
+    "OUT_STATUS",
+    "MOS170_STATUS",
+    "PLPN",
+    "CMS100_STATUS",
+    "MWNO",
+    "MOS100_STATUS",
+    "MOS180_STATUS",
+    "MOS050_STATUS",
+    "IN_STATUS",
+]
 DEFAULT_SCHEME = os.getenv("SPAREPART_SCHEME", "datalake")
 SQL_FILE = PROJECT_ROOT / "sql" / "wagons_base.sql"
+WAGONS_SQL_FILES = {
+    "prd": PROJECT_ROOT / "sql" / "wagons_base_prd.sql",
+    "tst": PROJECT_ROOT / "sql" / "wagons_base_tst.sql",
+}
 SPAREPARTS_SQL_FILE = PROJECT_ROOT / "sql" / "spareparts_base.sql"
 RSRD_ERP_SQL_FILE = PROJECT_ROOT / "sql" / "rsrd_erp_full.sql"
+TEILENUMMER_SQL_FILE = PROJECT_ROOT / "sql" / "teilenummer_base.sql"
 DEFAULT_ENV = os.getenv("SPAREPART_ENV", "prd").lower()
 ENV_ALIASES = {
     "live": "prd",
@@ -100,19 +128,27 @@ ENV_SUFFIXES = {"prd": "_PRD", "tst": "_TST"}
 ENV_IONAPI = {
     "prd": {
         "compass": IONAPI_DIR / "Infor Compass JDBC Driver.ionapi",
-        "mi": IONAPI_DIR / "MFD_Backend_Python.ionapi",
+        "mi": IONAPI_DIR / "MFD_Backend_Python_vNEW.ionapi"
+        if (IONAPI_DIR / "MFD_Backend_Python_vNEW.ionapi").exists()
+        else IONAPI_DIR / "MFD_Backend_Python.ionapi",
     },
     "tst": {
-        "compass": IONAPI_DIR / "Infor Compass JDBC Driver_TST.ionapi",
+        "compass": TST_COMPASS_IONAPI if TST_COMPASS_IONAPI.exists() else IONAPI_DIR / "Infor Compass JDBC Driver_TST.ionapi",
         "mi": IONAPI_DIR / "TST_MFD_Backend_Python_new.ionapi",
     },
 }
 MOS125_DRY_RUN = os.getenv("SPAREPART_MOS125_DRY_RUN", "1").strip().lower() in {"1", "true", "yes", "y"}
 CMS100_RETRY_DELAY_SEC = float(os.getenv("SPAREPART_CMS100_RETRY_DELAY", "3").strip() or "3")
-CMS100_RETRY_MAX = int(os.getenv("SPAREPART_CMS100_RETRY_MAX", "0").strip() or "0")
+CMS100_RETRY_MAX = int(os.getenv("SPAREPART_CMS100_RETRY_MAX", "20").strip() or "20")
 WAGON_CMS100_RETRY_DELAY_SEC = float(os.getenv("SPAREPART_WAGON_CMS100_RETRY_DELAY", "5").strip() or "5")
+WAGON_CMS100_RETRY_MAX = int(os.getenv("SPAREPART_WAGON_CMS100_RETRY_MAX", "8").strip() or "8")
 MOS170_RETRY_DELAY_SEC = float(os.getenv("SPAREPART_MOS170_RETRY_DELAY", "3").strip() or "3")
 MOS170_RETRY_MAX = int(os.getenv("SPAREPART_MOS170_RETRY_MAX", "5").strip() or "5")
+MOS100_RETRY_DELAY_SEC = float(os.getenv("SPAREPART_MOS100_RETRY_DELAY", "3").strip() or "3")
+MOS100_RETRY_MAX = int(os.getenv("SPAREPART_MOS100_RETRY_MAX", "10").strip() or "10")
+WAGON_MOS100_RETRY_MAX = int(os.getenv("SPAREPART_WAGON_MOS100_RETRY_MAX", "8").strip() or "8")
+WAGON_RENUMBER_SKIP_MOS170 = os.getenv("SPAREPART_WAGON_RENUMBER_SKIP_MOS170", "").strip().lower() in {"1", "true", "yes", "y"}
+WAGON_RENUMBER_FIXED_PLPN = os.getenv("SPAREPART_WAGON_RENUMBER_FIXED_PLPN", "").strip()
 API_LOG_ONLY = [
     value.strip()
     for value in os.getenv("SPAREPART_API_LOG_ONLY", "").split(",")
@@ -120,6 +156,8 @@ API_LOG_ONLY = [
 ]
 IPS_COMPANY = os.getenv("SPAREPART_IPS_COMPANY", "").strip()
 IPS_DIVISION = os.getenv("SPAREPART_IPS_DIVISION", "").strip()
+IPS_COMPANY_TST = os.getenv("SPAREPART_IPS_COMPANY_TST", "").strip()
+IPS_DIVISION_TST = os.getenv("SPAREPART_IPS_DIVISION_TST", "").strip()
 MOS180_FACI = os.getenv("SPAREPART_MOS180_FACI", "100").strip()
 MOS180_RESP = os.getenv("SPAREPART_MOS180_RESP", "CHRUPP").strip()
 MOS180_APRB = os.getenv("SPAREPART_MOS180_APRB", "CHRUPP").strip()
@@ -198,7 +236,10 @@ def _normalize_env(env: str | None) -> str:
 def _effective_dry_run(env: str | None) -> bool:
     normalized = _normalize_env(env)
     if normalized == "prd":
-        return True
+        override = os.getenv("SPAREPART_PRD_DRY_RUN")
+        if override is not None and override.strip() != "":
+            return override.strip().lower() in {"1", "true", "yes", "y"}
+        return MOS125_DRY_RUN
     return MOS125_DRY_RUN
 
 
@@ -353,7 +394,6 @@ def _table_columns(conn: sqlite3.Connection, table: str) -> List[str]:
         if row and len(row) > 1
     ]
 
-
 def _columns_from_sql_file(sql_path: Path) -> List[str]:
     if not sql_path.exists():
         return []
@@ -369,6 +409,16 @@ def _columns_from_sql_file(sql_path: Path) -> List[str]:
             columns.append(name)
             seen.add(name)
     return columns
+
+
+def _wagons_sql_file(env: str | None) -> Path:
+    normalized = _normalize_env(env)
+    preferred = WAGONS_SQL_FILES.get(normalized)
+    if preferred and preferred.exists():
+        return preferred
+    if SQL_FILE.exists():
+        return SQL_FILE
+    return preferred or SQL_FILE
 
 
 def _create_table_from_columns(conn: sqlite3.Connection, table: str, columns: List[str]) -> None:
@@ -500,7 +550,7 @@ def _ensure_renumber_schema(conn: sqlite3.Connection, table_name: str) -> None:
 
 
 def _ensure_env_tables(conn: sqlite3.Connection) -> None:
-    wagons_columns = _columns_from_sql_file(SQL_FILE)
+    wagons_columns = _columns_from_sql_file(_wagons_sql_file("prd"))
     spareparts_columns = _columns_from_sql_file(SPAREPARTS_SQL_FILE)
     rsrd_full_columns = _columns_from_sql_file(RSRD_ERP_SQL_FILE)
 
@@ -694,6 +744,21 @@ def _mi_error_message(payload: Any) -> str:
                 return text
         response = payload.get("MIResponse") or payload.get("response") or payload
         if isinstance(response, dict):
+            response_type = str(response.get("@type") or response.get("type") or "").strip()
+            response_code = str(response.get("@code") or response.get("code") or "").strip()
+            if "NOK" in response_type or "NOK" in response_code:
+                messages = response.get("Messages") or response.get("messages")
+                if isinstance(messages, dict):
+                    message_entries = messages.get("Message") or messages.get("message") or []
+                    if not isinstance(message_entries, list):
+                        message_entries = [message_entries]
+                    for entry in message_entries:
+                        if not isinstance(entry, dict):
+                            continue
+                        msg_text = str(entry.get("MessageText") or entry.get("messageText") or "").strip()
+                        if msg_text:
+                            return msg_text
+                return response_code or "ServerReturnedNOK"
             for key in ("ErrorNumber", "errorNumber", "ErrorCode", "errorCode", "Error"):
                 value = response.get(key)
                 if value is None or value == "":
@@ -710,10 +775,12 @@ def _mi_error_message(payload: Any) -> str:
                         continue
                     msg_type = str(entry.get("MessageType") or entry.get("messageType") or "").strip()
                     msg_text = str(entry.get("MessageText") or entry.get("messageText") or "").strip()
-                    if msg_type in {"2", "3", "4", "E", "ERROR"}:
-                        return msg_text or f"MessageType={msg_type}"
-                    if msg_text and ("error" in msg_text.lower() or "fehler" in msg_text.lower()):
-                        return msg_text
+                if msg_type in {"2", "3", "4", "E", "ERROR"}:
+                    if msg_text and "mo96202" in msg_text.lower():
+                        return ""
+                    return msg_text or f"MessageType={msg_type}"
+                if msg_text and ("error" in msg_text.lower() or "fehler" in msg_text.lower()):
+                    return msg_text
             for key in (
                 "ErrorMessage",
                 "errorMessage",
@@ -746,6 +813,59 @@ def _mi_error_message(payload: Any) -> str:
     return ""
 
 
+def _mi_extract_code_message(payload: Any) -> tuple[str, str]:
+    if not isinstance(payload, dict):
+        return "", ""
+    response = payload.get("MIResponse") or payload.get("response") or payload
+    if not isinstance(response, dict):
+        return "", ""
+    code = str(response.get("@code") or response.get("code") or "").strip()
+    message = ""
+    messages = response.get("Messages") or response.get("messages")
+    if isinstance(messages, dict):
+        message_entries = messages.get("Message") or messages.get("message") or []
+        if not isinstance(message_entries, list):
+            message_entries = [message_entries]
+        for entry in message_entries:
+            if not isinstance(entry, dict):
+                continue
+            msg_text = str(entry.get("MessageText") or entry.get("messageText") or "").strip()
+            if msg_text:
+                message = msg_text
+                break
+    if not message:
+        message = str(response.get("Message") or response.get("message") or "").strip()
+    return code, message
+
+
+def _mi_status(payload: Any) -> tuple[bool, str, str]:
+    code, message = _mi_extract_code_message(payload)
+    message_lower = message.lower()
+    if code == "MO96202" or "asynchronous removal" in message_lower:
+        return True, "OK_ASYNC", ""
+    if code == "MO12524" or "is installed in this position" in message_lower:
+        return True, "OK_IDEMPOTENT", ""
+    if code == "MO12527" or "status is 80" in message_lower:
+        return False, "BLOCKING_WARNING", message or code
+    error_message = _mi_error_message(payload)
+    if error_message:
+        return False, "ERROR", error_message
+    return True, "OK", ""
+
+
+def _objstrk_has_item(rows: List[Dict[str, Any]], cfgl: str, itno: str, ser2: str) -> bool:
+    cfgl_key = str(cfgl or "").strip()
+    itno_key = str(itno or "").strip()
+    ser2_key = str(ser2 or "").strip()
+    for row in rows:
+        row_cfgl = str(row.get("CFGL") or row.get("MFGL") or "").strip()
+        row_itno = str(row.get("ITNO") or "").strip()
+        row_ser2 = str(row.get("SER2") or "").strip()
+        if row_cfgl == cfgl_key and row_itno == itno_key and row_ser2 == ser2_key:
+            return True
+    return False
+
+
 def _build_m3_request_url(base_url: str, program: str, transaction: str, params: Dict[str, Any]) -> str:
     base = base_url.rstrip("/") if base_url else ""
     path = f"/M3/m3api-rest/execute/{program}/{transaction}"
@@ -761,12 +881,20 @@ def _build_ips_request_url(base_url: str, service_name: str) -> str:
     return f"{base}{path}" if base else path
 
 
+def _ips_company_division(env: str | None) -> tuple[str, str]:
+    normalized = _normalize_env(env or DEFAULT_ENV)
+    if normalized == "tst" and (IPS_COMPANY_TST or IPS_DIVISION_TST):
+        return IPS_COMPANY_TST, IPS_DIVISION_TST
+    return IPS_COMPANY, IPS_DIVISION
+
+
 def _build_ips_envelope(
     service_name: str,
     operation: str,
     params: Dict[str, str],
     namespace_override: str | None = None,
     body_tag_override: str | None = None,
+    env: str | None = None,
 ) -> str:
     namespace = namespace_override or f"http://schemas.infor.com/ips/{service_name}/{operation}"
     parts = []
@@ -775,12 +903,13 @@ def _build_ips_envelope(
         parts.append(f"<chg:{key}>{safe}</chg:{key}>")
     body = "".join(parts)
     header = "<soapenv:Header/>"
-    if IPS_COMPANY or IPS_DIVISION:
+    company, division = _ips_company_division(env)
+    if company or division:
         cred_parts = []
-        if IPS_COMPANY:
-            cred_parts.append(f"<cred:company>{xml_escape(IPS_COMPANY)}</cred:company>")
-        if IPS_DIVISION:
-            cred_parts.append(f"<cred:division>{xml_escape(IPS_DIVISION)}</cred:division>")
+        if company:
+            cred_parts.append(f"<cred:company>{xml_escape(company)}</cred:company>")
+        if division:
+            cred_parts.append(f"<cred:division>{xml_escape(division)}</cred:division>")
         cred_body = "".join(cred_parts)
         header = f"<soapenv:Header><cred:lws>{cred_body}</cred:lws></soapenv:Header>"
     body_tag = body_tag_override or service_name
@@ -803,6 +932,7 @@ def _call_ips_service(
     params: Dict[str, str],
     namespace_override: str | None = None,
     body_tag_override: str | None = None,
+    env: str | None = None,
 ) -> Dict[str, Any]:
     url = _build_ips_request_url(base_url, service_name)
     body = _build_ips_envelope(
@@ -811,6 +941,7 @@ def _call_ips_service(
         params,
         namespace_override=namespace_override,
         body_tag_override=body_tag_override,
+        env=env,
     )
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -844,22 +975,34 @@ def _append_api_log(
 ) -> None:
     if API_LOG_ONLY and action not in API_LOG_ONLY:
         return
-    entry = {
-        "ts": datetime.utcnow().isoformat(sep=" ", timespec="seconds"),
-        "env": env or "",
-        "action": action,
-        "wagon": wagon or {},
-        "program": program,
-        "transaction": transaction,
-        "dry_run": bool(dry_run),
-        "request": {"method": request_method, "url": request_url or ""},
-        "ok": ok,
-        "params": params,
-        "error": error or "",
-        "response": response,
-    }
-    if status is not None:
-        entry["status"] = status
+    if action == "rollback":
+        entry = {
+            "ts": datetime.utcnow().isoformat(sep=" ", timespec="seconds"),
+            "env": env or "",
+            "action": action,
+            "itno": params.get("ITNO", ""),
+            "sern": params.get("SERN", ""),
+            "parent_itno": params.get("PARENT_ITNO", ""),
+            "parent_sern": params.get("PARENT_SERN", ""),
+            "response": response,
+        }
+    else:
+        entry = {
+            "ts": datetime.utcnow().isoformat(sep=" ", timespec="seconds"),
+            "env": env or "",
+            "action": action,
+            "wagon": wagon or {},
+            "program": program,
+            "transaction": transaction,
+            "dry_run": bool(dry_run),
+            "request": {"method": request_method, "url": request_url or ""},
+            "ok": ok,
+            "params": params,
+            "error": error or "",
+            "response": response,
+        }
+        if status is not None:
+            entry["status"] = status
     try:
         API_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with API_LOG_PATH.open("a", encoding="utf-8") as handle:
@@ -919,6 +1062,32 @@ def _build_mos125_params(row: sqlite3.Row, mode: str = "out") -> Dict[str, str]:
         params["NHSI"] = parent_sern
         params["ITNI"] = part_itno
         params["BANI"] = part_ser2
+    elif mode == "rollback":
+        rmts_raw = _row_value(row, "RMTS")
+        trtm_value = ""
+        if rmts_raw:
+            rmts_str = "".join(ch for ch in str(rmts_raw) if ch.isdigit())
+            if rmts_str:
+                rmts_str = rmts_str.zfill(6)
+                try:
+                    hours = int(rmts_str[0:2])
+                    minutes = int(rmts_str[2:4])
+                    seconds = int(rmts_str[4:6])
+                    total_seconds = (hours * 3600) + (minutes * 60) + seconds + 60
+                    hours = (total_seconds // 3600) % 24
+                    minutes = (total_seconds % 3600) // 60
+                    seconds = total_seconds % 60
+                    trtm_value = str((hours * 10000) + (minutes * 100) + seconds)
+                except ValueError:
+                    trtm_value = ""
+        params["RITP"] = "UME"
+        params["TRTM"] = trtm_value or str(base_trtm + 10)
+        params["CFGL"] = cfgr
+        params["TWSL"] = "EINBAU"
+        params["NHAI"] = _row_value(row, "MTRL")
+        params["NHSI"] = _row_value(row, "SERN")
+        params["ITNI"] = _row_value(row, "ITNO")
+        params["BANI"] = _row_value(row, "SER2")
     else:
         params["CFGR"] = cfgr
         params["TWSL"] = "AUSBAU"
@@ -1017,6 +1186,56 @@ def _build_mos050_params(row: sqlite3.Row) -> Dict[str, str]:
     }
 
 
+def _resolve_teilenummer_umbau_datum(row: sqlite3.Row) -> str:
+    return (
+        _row_value(row, "TIMESTAMP")
+        or _row_value(row, "A_BIRT")
+        or datetime.utcnow().strftime("%Y%m%d")
+    )
+
+
+def _build_teilenummer_row_map(row: sqlite3.Row, new_itno: str, new_sern: str) -> Dict[str, str]:
+    umbau_datum = _resolve_teilenummer_umbau_datum(row)
+    parent_itno = _row_value(row, "C_MTRL")
+    parent_sern = _row_value(row, "C_SERN")
+    return {
+        "CFGL": _row_value(row, "C_CFGL"),
+        "ITNO": _row_value(row, "A_ITNO"),
+        "SER2": _row_value(row, "A_SERN"),
+        "MTRL": parent_itno,
+        "SERN": parent_sern,
+        "UMBAU_DATUM": umbau_datum,
+        "NEW_PART_ITNO": new_itno,
+        "NEW_PART_SER2": new_sern,
+        "WAGEN_ITNO": parent_itno,
+        "WAGEN_SERN": parent_sern,
+    }
+
+
+def _teilenummer_log_context(row: sqlite3.Row, new_itno: str, new_sern: str) -> Dict[str, str]:
+    return {
+        "itno": _row_value(row, "A_ITNO"),
+        "sern": _row_value(row, "A_SERN"),
+        "new_itno": new_itno,
+        "new_sern": new_sern,
+    }
+
+
+def _update_teilenummer_row(
+    conn: sqlite3.Connection,
+    table_name: str,
+    seq: int,
+    updates: Dict[str, Any],
+) -> None:
+    if not updates:
+        return
+    columns = ", ".join(f'"{key}"=?' for key in updates.keys())
+    values = list(updates.values())
+    values.append(seq)
+    conn.execute(f'UPDATE "{table_name}" SET {columns} WHERE rowid=?', values)
+    conn.commit()
+
+
 def _build_mms240_params(new_itno: str, new_sern: str) -> Dict[str, str]:
     clean_serial = re.sub(r"[^0-9]", "", new_sern)
     return {
@@ -1081,13 +1300,32 @@ def _ensure_wagon_data(table: str, env: str) -> str:
         if _table_exists(conn, env_table):
             return env_table
 
-    result = _run_compass_to_sqlite(SQL_FILE, env_table, env)
+    if table == TEILENUMMER_TABLE and TEILENUMMER_SQL_FILE.exists():
+        sql_file = TEILENUMMER_SQL_FILE
+    else:
+        sql_file = _wagons_sql_file(env)
+    result = _run_compass_to_sqlite(sql_file, env_table, env)
     if result.returncode != 0:
         raise HTTPException(
             status_code=500,
             detail=f"Reload fehlgeschlagen: {result.stderr or result.stdout}",
         )
     return env_table
+
+
+def _create_teilenummer_tausch_table(
+    conn: sqlite3.Connection,
+    source_table: str,
+    target_table: str,
+) -> List[str]:
+    columns = _table_columns(conn, source_table)
+    if not columns:
+        raise HTTPException(status_code=400, detail=f"Tabelle {source_table} hat keine Spalten.")
+    all_columns = columns + TEILENUMMER_TAUSCH_EXTRA_COLUMNS
+    conn.execute(f'DROP TABLE IF EXISTS "{target_table}"')
+    column_defs = ", ".join(f'"{col}" TEXT' for col in all_columns)
+    conn.execute(f'CREATE TABLE "{target_table}" ({column_defs})')
+    return all_columns
 
 
 def _extract_mi_rows(payload: dict) -> List[Dict[str, Any]]:
@@ -1166,6 +1404,8 @@ def _store_mi_rows(
                     row["PLPN"] = existing.get("PLPN") or ""
                 if existing.get("MWNO"):
                     row["MWNO"] = existing.get("MWNO") or ""
+                if existing.get("MOS100_STATUS"):
+                    row["MOS100_STATUS"] = existing.get("MOS100_STATUS") or ""
                 if existing.get("MOS180_STATUS"):
                     row["MOS180_STATUS"] = existing.get("MOS180_STATUS") or ""
                 if existing.get("MOS050_STATUS"):
@@ -1237,6 +1477,7 @@ def meta_targets(env: str = Query(DEFAULT_ENV)) -> dict:
             "renumber_wagon": _table_for(RENUMBER_WAGON_TABLE, env),
             "spareparts": _table_for(SPAREPARTS_TABLE, env),
             "sparepart_swaps": _table_for(SPAREPARTS_SWAP_TABLE, env),
+            "teilenummer": _table_for(TEILENUMMER_TABLE, env),
             "rsrd_erp_numbers": _table_for(RSRD_ERP_TABLE, env),
             "rsrd_erp_full": _table_for(RSRD_ERP_FULL_TABLE, env),
             "rsrd_upload": _table_for(RSRD_UPLOAD_TABLE, env),
@@ -1270,10 +1511,16 @@ def wagons_chunk(
 ) -> dict:
     table_name = _ensure_wagon_data(table, env)
     with _connect() as conn:
-        cursor = conn.execute(
-            f"SELECT * FROM {table_name} LIMIT ? OFFSET ?",
-            (limit, offset),
-        )
+        if table_name == _table_for(TEILENUMMER_TABLE, env):
+            cursor = conn.execute(
+                f'SELECT rowid AS "ROWID", * FROM "{table_name}" LIMIT ? OFFSET ?',
+                (limit, offset),
+            )
+        else:
+            cursor = conn.execute(
+                f"SELECT * FROM {table_name} LIMIT ? OFFSET ?",
+                (limit, offset),
+            )
         rows = [dict(row) for row in cursor.fetchall()]
         total = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
     return {
@@ -1316,6 +1563,7 @@ def favicon() -> Response:
 
 def _run_compass_to_sqlite(sql_file: Path, table: str, env: str) -> subprocess.CompletedProcess[str]:
     ionapi = _ionapi_path(env, "compass")
+    normalized = _normalize_env(env)
     cmd = [
         sys.executable,
         str(PROJECT_ROOT / "python" / "compass_to_sqlite.py"),
@@ -1332,6 +1580,8 @@ def _run_compass_to_sqlite(sql_file: Path, table: str, env: str) -> subprocess.C
         "--ionapi",
         str(ionapi),
     ]
+    if normalized == "tst" and TST_COMPASS_JDBC.exists():
+        cmd.extend(["--jdbc-jar", str(TST_COMPASS_JDBC)])
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
@@ -1511,12 +1761,13 @@ def reload_database(
     table: str = DEFAULT_TABLE,
     env: str = Query(DEFAULT_ENV),
 ) -> dict:
-    if not SQL_FILE.exists():
-        raise HTTPException(status_code=500, detail=f"SQL-Datei nicht gefunden: {SQL_FILE}")
+    wagons_sql = _wagons_sql_file(env)
+    if not wagons_sql.exists():
+        raise HTTPException(status_code=500, detail=f"SQL-Datei nicht gefunden: {wagons_sql}")
 
     table = _validate_table(table)
     table_name = _table_for(table, env)
-    result = _run_compass_to_sqlite(SQL_FILE, table_name, env)
+    result = _run_compass_to_sqlite(wagons_sql, table_name, env)
     if result.returncode != 0:
         raise HTTPException(
             status_code=500,
@@ -1526,6 +1777,602 @@ def reload_database(
     if table == DEFAULT_TABLE:
         background_tasks.add_task(_reload_spareparts_table, env)
     return {"message": "Reload erfolgreich", "stdout": result.stdout, "env": _normalize_env(env)}
+
+
+@app.post("/api/teilenummer/reload")
+def reload_teilenummer(env: str = Query(DEFAULT_ENV)) -> dict:
+    if not TEILENUMMER_SQL_FILE.exists():
+        raise HTTPException(status_code=500, detail=f"SQL-Datei nicht gefunden: {TEILENUMMER_SQL_FILE}")
+    table_name = _table_for(TEILENUMMER_TABLE, env)
+    result = _run_compass_to_sqlite(TEILENUMMER_SQL_FILE, table_name, env)
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Reload fehlgeschlagen: {result.stderr or result.stdout}",
+        )
+    with _connect() as conn:
+        _ensure_columns(conn, table_name, ["CHECKED"])
+        conn.execute(f'UPDATE "{table_name}" SET "CHECKED" = ""')
+        conn.commit()
+    return {"message": "Reload erfolgreich", "stdout": result.stdout, "env": _normalize_env(env)}
+
+
+@app.post("/api/teilenummer/check")
+def teilenummer_check(payload: dict = Body(...), env: str = Query(DEFAULT_ENV)) -> dict:
+    birt = payload.get("A_BIRT")
+    itno = payload.get("A_ITNO")
+    sern = payload.get("A_SERN")
+    checked = payload.get("checked")
+    if not birt or not itno or not sern:
+        raise HTTPException(status_code=400, detail="A_BIRT/A_ITNO/A_SERN fehlt.")
+    table_name = _table_for(TEILENUMMER_TABLE, env)
+    with _connect() as conn:
+        if not _table_exists(conn, table_name):
+            raise HTTPException(status_code=404, detail=f"Tabelle {table_name} nicht gefunden.")
+        _ensure_columns(conn, table_name, ["CHECKED"])
+        value = "1" if bool(checked) else ""
+        cursor = conn.execute(
+            f'UPDATE "{table_name}" SET "CHECKED" = ? WHERE "A_BIRT" = ? AND "A_ITNO" = ? AND "A_SERN" = ?',
+            (value, birt, itno, sern),
+        )
+        conn.commit()
+    return {
+        "table": table_name,
+        "matched": cursor.rowcount,
+        "checked": bool(checked),
+        "env": _normalize_env(env),
+    }
+
+
+@app.post("/api/teilenummer/prepare")
+def teilenummer_prepare(payload: dict = Body(...), env: str = Query(DEFAULT_ENV)) -> dict:
+    new_itno = (payload.get("new_itno") or "").strip()
+    new_sern = (payload.get("new_sern") or "").strip()
+    if not new_itno:
+        raise HTTPException(status_code=400, detail="Neue ITNO fehlt.")
+    source_table = _ensure_wagon_data(TEILENUMMER_TABLE, env)
+    target_table = _table_for(TEILENUMMER_TAUSCH_TABLE, env)
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    with _connect() as conn:
+        if not _table_exists(conn, source_table):
+            raise HTTPException(status_code=404, detail=f"Tabelle {source_table} nicht gefunden.")
+        _ensure_columns(conn, source_table, ["CHECKED"])
+        exists = conn.execute(
+            f'SELECT 1 FROM "{source_table}" WHERE "A_ITNO" = ? LIMIT 1',
+            (new_itno,),
+        ).fetchone()
+        if not exists:
+            raise HTTPException(
+                status_code=400,
+                detail="Neue ITNO existiert nicht in der Teilenummer-Datenbank.",
+            )
+        rows = [
+            dict(row)
+            for row in conn.execute(f'SELECT * FROM "{source_table}" WHERE "CHECKED" = "1"')
+            .fetchall()
+        ]
+        columns = _table_columns(conn, source_table)
+        _create_teilenummer_tausch_table(conn, source_table, target_table)
+        if rows:
+            insert_columns = columns + TEILENUMMER_TAUSCH_EXTRA_COLUMNS
+            placeholders = ", ".join("?" for _ in insert_columns)
+            column_list = ", ".join(f'"{col}"' for col in insert_columns)
+            insert_sql = f'INSERT INTO "{target_table}" ({column_list}) VALUES ({placeholders})'
+            data: List[List[Any]] = []
+            extra_values = {
+                "NITNO": new_itno,
+                "NSERN": new_sern,
+                "UMGEBAUT": "",
+                "TIMESTAMP": timestamp,
+                "OUT_STATUS": "",
+                "MOS170_STATUS": "",
+                "PLPN": "",
+                "CMS100_STATUS": "",
+                "MWNO": "",
+                "MOS100_STATUS": "",
+                "MOS180_STATUS": "",
+                "MOS050_STATUS": "",
+                "IN_STATUS": "",
+            }
+            for row in rows:
+                values = [row.get(col, "") for col in columns]
+                values.extend(extra_values.get(col, "") for col in TEILENUMMER_TAUSCH_EXTRA_COLUMNS)
+                data.append(values)
+            conn.executemany(insert_sql, data)
+        conn.commit()
+    return {
+        "table": target_table,
+        "count": len(rows),
+        "new_itno": new_itno,
+        "env": _normalize_env(env),
+    }
+
+
+@app.post("/api/teilenummer/run")
+def teilenummer_run(env: str = Query(DEFAULT_ENV)) -> dict:
+    job = _create_job("teilenummer_run", env)
+
+    def _worker() -> None:
+        try:
+            table_name = _table_for(TEILENUMMER_TAUSCH_TABLE, env)
+            with _connect() as conn:
+                if not _table_exists(conn, table_name):
+                    raise HTTPException(status_code=404, detail=f"Tabelle {table_name} nicht gefunden.")
+                _ensure_columns(conn, table_name, TEILENUMMER_TAUSCH_EXTRA_COLUMNS)
+                rows = conn.execute(
+                    f'SELECT rowid AS seq, * FROM "{table_name}" ORDER BY rowid ASC'
+                ).fetchall()
+
+            if not rows:
+                raise HTTPException(status_code=404, detail="Keine Daten in TEILENUMMER_TAUSCH.")
+
+            has_new_sern = any(_row_value(row, "NSERN") for row in rows)
+            if has_new_sern and len(rows) > 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Neue Seriennummer gesetzt, aber mehr als 1 Datensatz vorhanden.",
+                )
+
+            total_steps = len(rows) * 8
+            _update_job(job["id"], total=total_steps, processed=0, results=[])
+            _append_job_log(job["id"], f"Teilenummer-Ablauf startet: {len(rows)} Datensätze.")
+
+            dry_run = _effective_dry_run(env)
+            ionapi_path = _ionapi_path(env, "mi")
+            ion_cfg = load_ionapi_config(str(ionapi_path))
+            base_url = build_base_url(ion_cfg)
+            token = ""
+            if not dry_run:
+                token = get_access_token_service_account(ion_cfg)
+
+            env_label = _normalize_env(env).upper()
+            processed = 0
+
+            with _connect() as conn:
+                for index, row in enumerate(rows, start=1):
+                    old_itno = _row_value(row, "A_ITNO")
+                    old_sern = _row_value(row, "A_SERN")
+                    new_itno = _row_value(row, "NITNO") or old_itno
+                    new_sern = _row_value(row, "NSERN") or old_sern
+                    row_map = _build_teilenummer_row_map(row, new_itno, new_sern)
+                    wagon_ctx = _teilenummer_log_context(row, new_itno, new_sern)
+
+                    # MOS125MI Ausbau
+                    params = _build_mos125_params(row_map, mode="out")
+                    request_url = _build_m3_request_url(base_url, "MOS125MI", "RemoveInstall", params)
+                    if not params.get("TRDT"):
+                        ok = False
+                        status_label = "ERROR"
+                        error_message = "UMBAU_DATUM fehlt"
+                        response = {"error": error_message}
+                    elif dry_run:
+                        ok = True
+                        status_label = "DRYRUN"
+                        error_message = None
+                        response = {"dry_run": True}
+                    else:
+                        try:
+                            response = call_m3_mi_get(base_url, token, "MOS125MI", "RemoveInstall", params)
+                            ok, status_label, error_message = _mi_status(response)
+                        except Exception as exc:  # noqa: BLE001
+                            ok = False
+                            status_label = "ERROR"
+                            error_message = str(exc)
+                            response = {"error": error_message}
+                    out_status = status_label if ok else f"{status_label}: {error_message}"
+                    _append_api_log(
+                        "teilenummer_ausbau",
+                        params,
+                        response,
+                        ok,
+                        error_message,
+                        env=env_label,
+                        wagon=wagon_ctx,
+                        dry_run=dry_run,
+                        request_url=request_url,
+                        program="MOS125MI",
+                        transaction="RemoveInstall",
+                    )
+                    _update_teilenummer_row(conn, table_name, row["seq"], {"OUT_STATUS": out_status})
+                    processed += 1
+                    _update_job(job["id"], processed=processed)
+
+                    # MOS170MI AddProp (mit Retry)
+                    plpn = ""
+                    mos170_status = ""
+                    attempt = 1
+                    while True:
+                        params = _build_mos170_params(row_map)
+                        request_url = _build_m3_request_url(base_url, "MOS170MI", "AddProp", params)
+                        required_missing = not params.get("ITNO") or not params.get("BANO") or not params.get("STDT")
+                        if required_missing:
+                            ok = False
+                            status_label = "ERROR"
+                            error_message = "Pflichtfelder fehlen"
+                            response = {"error": error_message}
+                        elif dry_run:
+                            ok = True
+                            status_label = "DRYRUN"
+                            error_message = None
+                            response = {"dry_run": True}
+                        else:
+                            try:
+                                response = call_m3_mi_get(base_url, token, "MOS170MI", "AddProp", params)
+                                ok, status_label, error_message = _mi_status(response)
+                            except Exception as exc:  # noqa: BLE001
+                                ok = False
+                                status_label = "ERROR"
+                                error_message = str(exc)
+                                response = {"error": error_message}
+                        plpn = _extract_plpn(response) if ok else ""
+                        if ok and not plpn:
+                            ok = False
+                            status_label = "ERROR"
+                            error_message = "PLPN fehlt"
+                        mos170_status = status_label if ok else f"{status_label}: {error_message}"
+                        _append_api_log(
+                            "teilenummer_mos170_addprop",
+                            params,
+                            {"plpn": plpn, "response": response},
+                            ok,
+                            error_message,
+                            env=env_label,
+                            wagon=wagon_ctx,
+                            dry_run=dry_run,
+                            request_url=request_url,
+                            program="MOS170MI",
+                            transaction="AddProp",
+                        )
+                        _update_teilenummer_row(
+                            conn,
+                            table_name,
+                            row["seq"],
+                            {"MOS170_STATUS": mos170_status, "PLPN": plpn},
+                        )
+                        processed += 1
+                        _update_job(job["id"], processed=processed)
+                        if plpn or dry_run or required_missing:
+                            break
+                        if MOS170_RETRY_MAX and attempt >= MOS170_RETRY_MAX:
+                            break
+                        total_steps += 1
+                        _update_job(job["id"], total=total_steps)
+                        _append_job_log(
+                            job["id"],
+                            f"MOS170MI AddProp: Warte {MOS170_RETRY_DELAY_SEC} Sekunden auf ERP ...",
+                        )
+                        time.sleep(MOS170_RETRY_DELAY_SEC)
+                        attempt += 1
+
+                    # MOS170 PLPN (Log)
+                    _append_api_log(
+                        "teilenummer_mos170_plpn",
+                        params,
+                        {"plpn": plpn},
+                        bool(plpn),
+                        None if plpn else "PLPN fehlt",
+                        env=env_label,
+                        wagon=wagon_ctx,
+                        dry_run=dry_run,
+                        request_url=request_url,
+                        program="MOS170MI",
+                        transaction="AddProp",
+                    )
+                    processed += 1
+                    _update_job(job["id"], processed=processed)
+
+                    # CMS100MI Lst_PLPN_MWNO (mit Retry)
+                    mwno = ""
+                    cms_status = ""
+                    attempt = 1
+                    while True:
+                        params = _build_cms100_params(plpn)
+                        request_url = _build_m3_request_url(base_url, "CMS100MI", "Lst_PLPN_MWNO", params)
+                        if not plpn:
+                            ok = False
+                            status_label = "ERROR"
+                            error_message = "PLPN fehlt"
+                            response = {"error": error_message}
+                            mwno = ""
+                        elif dry_run:
+                            ok = True
+                            status_label = "DRYRUN"
+                            error_message = None
+                            response = {"dry_run": True}
+                            mwno = "DRYRUN"
+                        else:
+                            try:
+                                response = call_m3_mi_get(base_url, token, "CMS100MI", "Lst_PLPN_MWNO", params)
+                                ok, status_label, error_message = _mi_status(response)
+                                mwno = _extract_mwno(response) if ok else ""
+                            except Exception as exc:  # noqa: BLE001
+                                ok = False
+                                status_label = "ERROR"
+                                error_message = str(exc)
+                                response = {"error": error_message}
+                                mwno = ""
+                        if ok and not mwno:
+                            ok = False
+                            status_label = "ERROR"
+                            error_message = "MWNO fehlt"
+                        cms_status = status_label if ok else f"{status_label}: {error_message}"
+                        _append_api_log(
+                            "teilenummer_cms100_lst_plpn_mwno",
+                            params,
+                            {"qomwno": mwno, "response": response},
+                            ok,
+                            error_message,
+                            env=env_label,
+                            wagon=wagon_ctx,
+                            dry_run=dry_run,
+                            request_url=request_url,
+                            program="CMS100MI",
+                            transaction="Lst_PLPN_MWNO",
+                        )
+                        _update_teilenummer_row(
+                            conn,
+                            table_name,
+                            row["seq"],
+                            {"CMS100_STATUS": cms_status, "MWNO": mwno},
+                        )
+                        processed += 1
+                        _update_job(job["id"], processed=processed)
+                        if mwno or dry_run or not plpn:
+                            break
+                        if CMS100_RETRY_MAX and attempt >= CMS100_RETRY_MAX:
+                            break
+                        total_steps += 1
+                        _update_job(job["id"], total=total_steps)
+                        _append_job_log(
+                            job["id"],
+                            f"CMS100MI: Warte {CMS100_RETRY_DELAY_SEC} Sekunden auf ERP ...",
+                        )
+                        time.sleep(CMS100_RETRY_DELAY_SEC)
+                        attempt += 1
+
+                    # IPS MOS100 Chg_SERN (mit Retry)
+                    params = {
+                        "WorkOrderNumber": mwno,
+                        "Product": old_itno,
+                        "NewItemNumber": new_itno,
+                        "NewLotNumber": new_sern,
+                    }
+                    request_url = _build_ips_request_url(base_url, "MOS100")
+                    attempt = 1
+                    ok = False
+                    error_message = None
+                    response = {}
+                    status_label = "NOK"
+                    while True:
+                        if not mwno:
+                            ok = False
+                            status_label = "NOK"
+                            error_message = "MWNO fehlt"
+                            response = {"error": error_message}
+                        elif dry_run:
+                            ok = True
+                            status_label = "DRYRUN"
+                            error_message = None
+                            response = {"dry_run": True}
+                        else:
+                            try:
+                                response = _call_ips_service(
+                                    base_url,
+                                    token,
+                                    "MOS100",
+                                    "Chg_SERN",
+                                    params,
+                                    env=env,
+                                )
+                                ok = int(response.get("status_code") or 0) < 400
+                                status_label = "OK" if ok else "NOK"
+                                error_message = None if ok else f"HTTP {response.get('status_code')}"
+                            except Exception as exc:  # noqa: BLE001
+                                ok = False
+                                status_label = "NOK"
+                                error_message = str(exc)
+                                response = {"error": error_message}
+                        _append_api_log(
+                            "teilenummer_ips_mos100_chgsern",
+                            params,
+                            response,
+                            ok,
+                            error_message,
+                            env=env_label,
+                            wagon=wagon_ctx,
+                            dry_run=dry_run,
+                            request_url=request_url,
+                            program="MOS100",
+                            transaction="Chg_SERN",
+                            request_method="POST",
+                            status=status_label,
+                        )
+                        if ok or dry_run:
+                            break
+                        if MOS100_RETRY_MAX and attempt >= MOS100_RETRY_MAX:
+                            break
+                        if MOS100_RETRY_DELAY_SEC:
+                            time.sleep(MOS100_RETRY_DELAY_SEC)
+                        attempt += 1
+                    _update_teilenummer_row(
+                        conn,
+                        table_name,
+                        row["seq"],
+                        {"MOS100_STATUS": status_label},
+                    )
+                    processed += 1
+                    _update_job(job["id"], processed=processed)
+
+                    # MOS180MI Approve
+                    mos180_row = dict(row_map)
+                    mos180_row["MWNO"] = mwno
+                    params = _build_mos180_params(mos180_row)
+                    request_url = _build_m3_request_url(base_url, "MOS180MI", "Approve", params)
+                    if not mwno:
+                        ok = False
+                        status_label = "ERROR"
+                        error_message = "MWNO fehlt"
+                        response = {"error": error_message}
+                    elif dry_run:
+                        ok = True
+                        status_label = "DRYRUN"
+                        error_message = None
+                        response = {"dry_run": True}
+                    else:
+                        try:
+                            response = call_m3_mi_get(base_url, token, "MOS180MI", "Approve", params)
+                            ok, status_label, error_message = _mi_status(response)
+                        except Exception as exc:  # noqa: BLE001
+                            ok = False
+                            status_label = "ERROR"
+                            error_message = str(exc)
+                            response = {"error": error_message}
+                    mos180_status = status_label if ok else f"{status_label}: {error_message}"
+                    _append_api_log(
+                        "teilenummer_mos180_approve",
+                        params,
+                        response,
+                        ok,
+                        error_message,
+                        env=env_label,
+                        wagon=wagon_ctx,
+                        dry_run=dry_run,
+                        request_url=request_url,
+                        program="MOS180MI",
+                        transaction="Approve",
+                    )
+                    _update_teilenummer_row(
+                        conn,
+                        table_name,
+                        row["seq"],
+                        {"MOS180_STATUS": mos180_status},
+                    )
+                    processed += 1
+                    _update_job(job["id"], processed=processed)
+
+                    # IPS MOS050 Montage
+                    mos050_row = dict(row_map)
+                    mos050_row["MWNO"] = mwno
+                    params = _build_mos050_params(mos050_row)
+                    request_url = _build_ips_request_url(base_url, MOS050_SERVICE)
+                    if not mwno:
+                        ok = False
+                        status_label = "NOK"
+                        error_message = "MWNO fehlt"
+                        response = {"error": error_message}
+                    elif dry_run:
+                        ok = True
+                        status_label = "DRYRUN"
+                        error_message = None
+                        response = {"dry_run": True}
+                    else:
+                        try:
+                            response = _call_ips_service(
+                                base_url,
+                                token,
+                                MOS050_SERVICE,
+                                MOS050_OPERATION,
+                                params,
+                                namespace_override=MOS050_NAMESPACE or None,
+                                body_tag_override=MOS050_BODY_TAG or None,
+                                env=env,
+                            )
+                            ok = int(response.get("status_code") or 0) < 400
+                            status_label = "OK" if ok else "NOK"
+                            error_message = None if ok else f"HTTP {response.get('status_code')}"
+                        except Exception as exc:  # noqa: BLE001
+                            ok = False
+                            status_label = "NOK"
+                            error_message = str(exc)
+                            response = {"error": error_message}
+                    _append_api_log(
+                        "teilenummer_ips_mos50_montage",
+                        params,
+                        response,
+                        ok,
+                        error_message,
+                        env=env_label,
+                        wagon=wagon_ctx,
+                        dry_run=dry_run,
+                        request_url=request_url,
+                        program=MOS050_SERVICE or "MOS050",
+                        transaction=MOS050_OPERATION or "Montage",
+                        request_method="POST",
+                        status=status_label,
+                    )
+                    _update_teilenummer_row(
+                        conn,
+                        table_name,
+                        row["seq"],
+                        {"MOS050_STATUS": status_label},
+                    )
+                    processed += 1
+                    _update_job(job["id"], processed=processed)
+
+                    # MOS125MI Einbau
+                    params = _build_mos125_params(row_map, mode="in")
+                    request_url = _build_m3_request_url(base_url, "MOS125MI", "RemoveInstall", params)
+                    if not params.get("TRDT"):
+                        ok = False
+                        status_label = "ERROR"
+                        error_message = "UMBAU_DATUM fehlt"
+                        response = {"error": error_message}
+                    elif dry_run:
+                        ok = True
+                        status_label = "DRYRUN"
+                        error_message = None
+                        response = {"dry_run": True}
+                    else:
+                        try:
+                            response = call_m3_mi_get(base_url, token, "MOS125MI", "RemoveInstall", params)
+                            ok, status_label, error_message = _mi_status(response)
+                        except Exception as exc:  # noqa: BLE001
+                            ok = False
+                            status_label = "ERROR"
+                            error_message = str(exc)
+                            response = {"error": error_message}
+                    in_status = status_label if ok else f"{status_label}: {error_message}"
+                    _append_api_log(
+                        "teilenummer_einbau",
+                        params,
+                        response,
+                        ok,
+                        error_message,
+                        env=env_label,
+                        wagon=wagon_ctx,
+                        dry_run=dry_run,
+                        request_url=request_url,
+                        program="MOS125MI",
+                        transaction="RemoveInstall",
+                    )
+                    _update_teilenummer_row(conn, table_name, row["seq"], {"IN_STATUS": in_status})
+                    processed += 1
+                    _update_job(job["id"], processed=processed)
+
+                    _append_job_log(
+                        job["id"],
+                        f"{index}/{len(rows)} abgeschlossen: {old_itno} {old_sern} -> {new_itno} {new_sern}",
+                    )
+
+            with _connect() as conn:
+                source_table = _table_for(TEILENUMMER_TABLE, env)
+                if _table_exists(conn, source_table):
+                    _ensure_columns(conn, source_table, ["CHECKED"])
+                    conn.execute(f'UPDATE "{source_table}" SET "CHECKED" = ""')
+                conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+                conn.commit()
+
+            _finish_job(
+                job["id"],
+                "success",
+                result={"total": total_steps, "ok": processed, "error": 0},
+            )
+        except Exception as exc:  # noqa: BLE001
+            _append_job_log(job["id"], f"Fehler: {exc}")
+            _finish_job(job["id"], "error", error=str(exc))
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return {"job_id": job["id"], "status": job["status"], "env": job["env"]}
 
 
 @app.get("/api/objstrk")
@@ -1572,6 +2419,701 @@ def objstrk(
     return payload
 
 
+@app.post("/api/renumber/import_mrouhi")
+def renumber_import_mrouhi(payload: dict = Body(...), env: str = Query(DEFAULT_ENV)) -> dict:
+    rows = payload.get("rows") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or not rows:
+        raise HTTPException(status_code=400, detail="rows fehlt oder ist leer.")
+
+    mapped_rows: List[Dict[str, Any]] = []
+    wagon_itno = ""
+    wagon_sern = ""
+    for entry in rows:
+        if not isinstance(entry, dict):
+            continue
+        hiit = (entry.get("HIIT") or "").strip()
+        hisn = (entry.get("HISN") or "").strip()
+        cfgl = (entry.get("CFGL") or "").strip()
+        itno = (entry.get("ITNO") or "").strip()
+        sern = (entry.get("SERN") or "").strip()
+        remd = (entry.get("REMD") or "").strip()
+        rmts = (entry.get("RMTS") or "").strip()
+        if not hiit or not hisn or not itno:
+            continue
+        if not wagon_itno:
+            wagon_itno = hiit
+        if not wagon_sern:
+            wagon_sern = hisn
+        mapped_rows.append(
+            {
+                "WAGEN_ITNO": hiit,
+                "WAGEN_SERN": hisn,
+                "MTRL": hiit,
+                "SERN": hisn,
+                "ITNO": itno,
+                "SER2": sern,
+                "CFGL": cfgl,
+                "MFGL": cfgl,
+                "UMBAU_DATUM": remd,
+                "RMTS": rmts,
+                "OUT": "OK",
+            }
+        )
+
+    if not mapped_rows:
+        raise HTTPException(status_code=400, detail="Keine gueltigen Zeilen gefunden.")
+
+    _store_mi_rows(RENUMBER_WAGON_TABLE, env, mapped_rows, wagon_itno=wagon_itno, wagon_sern=wagon_sern)
+    return {
+        "message": "RENUMBER_WAGON importiert.",
+        "rows": len(mapped_rows),
+        "env": _normalize_env(env),
+        "wagon_itno": wagon_itno,
+        "wagon_sern": wagon_sern,
+    }
+
+
+@app.get("/api/renumber/objstrk")
+def renumber_objstrk(env: str = Query(DEFAULT_ENV)) -> dict:
+    table_name = _table_for(RENUMBER_WAGON_TABLE, env)
+    with _connect() as conn:
+        if not _table_exists(conn, table_name):
+            raise HTTPException(status_code=404, detail=f"Tabelle {table_name} nicht gefunden.")
+        _ensure_renumber_schema(conn, table_name)
+        rows = conn.execute(
+            f"""SELECT rowid AS seq, * FROM "{table_name}"
+            ORDER BY CASE
+              WHEN "SEQ" IS NULL OR "SEQ" = '' THEN rowid
+              ELSE CAST("SEQ" AS INTEGER)
+            END ASC"""
+        ).fetchall()
+
+    wagon_itno = ""
+    wagon_sern = ""
+    records = []
+    for row in rows:
+        row_dict = dict(row)
+        row_dict.pop("seq", None)
+        if not wagon_itno:
+            wagon_itno = row_dict.get("WAGEN_ITNO") or row_dict.get("MTRL") or ""
+        if not wagon_sern:
+            wagon_sern = row_dict.get("WAGEN_SERN") or row_dict.get("SERN") or ""
+        name_values = [
+            {"Name": str(key), "Value": "" if value is None else str(value)}
+            for key, value in row_dict.items()
+        ]
+        records.append({"NameValue": name_values})
+
+    return {"response": {"MIRecord": records}, "wagon_itno": wagon_itno, "wagon_sern": wagon_sern}
+
+
+def _run_compass_sql(sql: str, env: str, table_name: str) -> List[Dict[str, Any]]:
+    ionapi = _ionapi_path(env, "compass")
+    cmd = [
+        sys.executable,
+        str(PROJECT_ROOT / "python" / "compass_to_sqlite.py"),
+        "--ionapi",
+        str(ionapi),
+        "--sql",
+        sql,
+        "--sqlite-db",
+        str(DB_PATH),
+        "--table",
+        table_name,
+        "--mode",
+        "replace",
+    ]
+    if _normalize_env(env) == "tst" and TST_COMPASS_JDBC.exists():
+        cmd.extend(["--jdbc-jar", str(TST_COMPASS_JDBC)])
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=result.stderr or result.stdout or "Compass SQL fehlgeschlagen",
+        )
+    with _connect() as conn:
+        if not _table_exists(conn, table_name):
+            return []
+        rows = [dict(row) for row in conn.execute(f'SELECT * FROM "{table_name}"').fetchall()]
+        conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+        conn.commit()
+    return rows
+
+
+def _load_mrouhi_rows(hisn: str, env: str) -> List[Dict[str, Any]]:
+    cleaned = (hisn or "").strip()
+    if not cleaned:
+        return []
+    safe = cleaned.replace("'", "''")
+    sql = (
+        "SELECT "
+        "a.HIIT, a.HISN, a.CFGL, a.ITNO, a.SERN, a.REMD, a.RMTS, "
+        "b.EQTP, b.STAT "
+        "FROM MROUHI a "
+        "LEFT OUTER JOIN MILOIN b ON a.SERN = b.SERN "
+        f"WHERE a.HISN = '{safe}' ORDER BY a.CFGL"
+    )
+    table_name = f"mrouhi_tmp_{uuid.uuid4().hex[:10]}"
+    return _run_compass_sql(sql, env, table_name)
+
+
+def _fetch_objstrk_rows(mtrl: str, sern: str, env: str) -> List[Dict[str, Any]]:
+    ionapi = _ionapi_path(env, "mi")
+    cmd = [
+        sys.executable,
+        str(PROJECT_ROOT / "python" / "m3_api_call.py"),
+        "--program",
+        "MOS256MI",
+        "--transaction",
+        "LstAsBuild",
+        "--params-json",
+        json.dumps({"MTRL": mtrl, "SERN": sern, "EXPA": "1", "MEVA": "1"}),
+        "--ionapi",
+        str(ionapi),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail=result.stderr or result.stdout or "MOS256 fehlgeschlagen")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail=f"Ungültige MOS256 Antwort: {exc}") from exc
+    return _extract_mi_rows(payload)
+
+
+def _remd_is_blank(value: str) -> bool:
+    normalized = str(value or "").strip()
+    return normalized in {"", "0", "00000000"}
+
+
+def _cfgl_segments(value: str) -> List[int]:
+    parts = [part for part in str(value or "").split("-") if part != ""]
+    segments: List[int] = []
+    for part in parts:
+        if part.isdigit():
+            segments.append(int(part))
+        else:
+            digits = "".join(ch for ch in part if ch.isdigit())
+            segments.append(int(digits) if digits else 0)
+    return segments
+
+
+def _cfgl_sort_key_desc(value: str) -> tuple:
+    segments = _cfgl_segments(value)
+    return (len(segments), segments)
+
+
+def _parent_cfgl_for(cfgl: str) -> str:
+    segments = [part for part in str(cfgl or "").split("-") if part != ""]
+    if len(segments) == 4 and segments[2] == "01":
+        return f"{segments[0]}-{segments[1]}-{segments[3]}"
+    return cfgl.rsplit("-", 1)[0] if "-" in cfgl else ""
+
+
+def _build_mrouhi_preview_rows(hisn: str, env: str) -> List[Dict[str, str]]:
+    rows = _load_mrouhi_rows(hisn, env)
+    entries: List[Dict[str, str]] = []
+    for idx, entry in enumerate(rows):
+        cfgl = (entry.get("CFGL") or "").strip()
+        if not cfgl:
+            continue
+        remd = (entry.get("REMD") or "").strip()
+        if _remd_is_blank(remd):
+            continue
+        entries.append(
+            {
+                "idx": str(idx),
+                "HIIT": (entry.get("HIIT") or "").strip(),
+                "HISN": (entry.get("HISN") or "").strip(),
+                "CFGL": cfgl,
+                "ITNO": (entry.get("ITNO") or "").strip(),
+                "SERN": (entry.get("SERN") or "").strip(),
+                "REMD": (entry.get("REMD") or "").strip(),
+                "RMTS": (entry.get("RMTS") or "").strip(),
+                "EQTP": (entry.get("EQTP") or "").strip(),
+                "STAT": (entry.get("STAT") or "").strip(),
+            }
+        )
+    cfgl_map: Dict[str, List[Dict[str, str]]] = {}
+    for entry in entries:
+        cfgl_map.setdefault(entry["CFGL"], []).append(entry)
+    cfgl_counts = {cfgl: len(items) for cfgl, items in cfgl_map.items()}
+    sorted_entries = sorted(
+        entries,
+        key=lambda entry: (
+            _cfgl_sort_key_desc(entry["CFGL"]),
+            entry["idx"],
+        ),
+        reverse=True,
+    )
+    eqtp_parent_map = {"110": "106"}
+    child_indexes: Dict[str, int] = {}
+    preview: List[Dict[str, str]] = []
+    for entry in sorted_entries:
+        cfgl = entry["CFGL"]
+        parent_cfgl = _parent_cfgl_for(cfgl)
+        parent_itno = entry["HIIT"]
+        parent_sern = entry["HISN"]
+        parent_candidates = []
+        if parent_cfgl:
+            parent_candidates = cfgl_map.get(parent_cfgl) or []
+            child_count = cfgl_counts.get(cfgl, 0)
+            if child_count > len(parent_candidates):
+                parent_prefix = parent_cfgl.rsplit("-", 1)[0] if "-" in parent_cfgl else ""
+                if parent_prefix:
+                    target_depth = len(_cfgl_segments(parent_cfgl))
+                    for cfgl_key, candidates in cfgl_map.items():
+                        if cfgl_key == parent_cfgl:
+                            continue
+                        if not cfgl_key.startswith(parent_prefix + "-"):
+                            continue
+                        if len(_cfgl_segments(cfgl_key)) != target_depth:
+                            continue
+                        parent_candidates.extend(candidates)
+        if parent_candidates:
+            expected_parent_eqtp = eqtp_parent_map.get(entry.get("EQTP", ""))
+            if expected_parent_eqtp:
+                filtered = [
+                    candidate
+                    for candidate in parent_candidates
+                    if candidate.get("EQTP", "") == expected_parent_eqtp
+                ]
+                if filtered:
+                    parent_candidates = filtered
+            parent_candidates = sorted(
+                parent_candidates,
+                key=lambda candidate: (candidate.get("SERN") or "", candidate.get("ITNO") or ""),
+            )
+            child_index = child_indexes.get(cfgl, 0)
+            child_indexes[cfgl] = child_index + 1
+            if len(parent_candidates) >= cfgl_counts.get(cfgl, 0):
+                chosen = parent_candidates[child_index]
+            else:
+                chosen = parent_candidates[child_index % len(parent_candidates)]
+            parent_itno = chosen.get("ITNO", "") or parent_itno
+            parent_sern = chosen.get("SERN", "") or parent_sern
+        preview.append(
+            {
+                "CFGL": cfgl,
+                "ITNO": entry["ITNO"],
+                "SERN": entry["SERN"],
+                "REMD": entry["REMD"],
+                "RMTS": entry["RMTS"],
+                "PARENT_CFGL": parent_cfgl,
+                "PARENT_ITNO": parent_itno,
+                "PARENT_SERN": parent_sern,
+            }
+        )
+    return preview
+
+
+def _build_mrouhi_parent_candidates(hisn: str, env: str) -> Dict[str, List[Dict[str, str]]]:
+    rows = _load_mrouhi_rows(hisn, env)
+    entries: List[Dict[str, str]] = []
+    for entry in rows:
+        cfgl = (entry.get("CFGL") or "").strip()
+        if not cfgl:
+            continue
+        remd = (entry.get("REMD") or "").strip()
+        if _remd_is_blank(remd):
+            continue
+        entries.append(
+            {
+                "CFGL": cfgl,
+                "ITNO": (entry.get("ITNO") or "").strip(),
+                "SERN": (entry.get("SERN") or "").strip(),
+                "EQTP": (entry.get("EQTP") or "").strip(),
+            }
+        )
+    cfgl_map: Dict[str, List[Dict[str, str]]] = {}
+    for entry in entries:
+        cfgl_map.setdefault(entry["CFGL"], []).append(entry)
+    cfgl_counts = {cfgl: len(items) for cfgl, items in cfgl_map.items()}
+    eqtp_parent_map = {"110": "106"}
+    candidate_map: Dict[str, List[Dict[str, str]]] = {}
+    for entry in entries:
+        cfgl = entry["CFGL"]
+        parent_cfgl = _parent_cfgl_for(cfgl)
+        if not parent_cfgl:
+            continue
+        parent_candidates = list(cfgl_map.get(parent_cfgl) or [])
+        child_count = cfgl_counts.get(cfgl, 0)
+        if child_count > len(parent_candidates):
+            parent_prefix = parent_cfgl.rsplit("-", 1)[0] if "-" in parent_cfgl else ""
+            if parent_prefix:
+                target_depth = len(_cfgl_segments(parent_cfgl))
+                for cfgl_key, candidates in cfgl_map.items():
+                    if cfgl_key == parent_cfgl:
+                        continue
+                    if not cfgl_key.startswith(parent_prefix + "-"):
+                        continue
+                    if len(_cfgl_segments(cfgl_key)) != target_depth:
+                        continue
+                    parent_candidates.extend(candidates)
+        expected_parent_eqtp = eqtp_parent_map.get(entry.get("EQTP", ""))
+        if expected_parent_eqtp:
+            filtered = [
+                candidate
+                for candidate in parent_candidates
+                if candidate.get("EQTP", "") == expected_parent_eqtp
+            ]
+            if filtered:
+                parent_candidates = filtered
+        parent_candidates = sorted(
+            parent_candidates,
+            key=lambda candidate: (candidate.get("SERN") or "", candidate.get("ITNO") or ""),
+        )
+        candidate_map[cfgl] = parent_candidates
+    return candidate_map
+
+
+def _run_rollback_job(job: dict, env: str) -> None:
+    try:
+        table_name = _table_for(RENUMBER_WAGON_TABLE, env)
+        with _connect() as conn:
+            if not _table_exists(conn, table_name):
+                raise HTTPException(status_code=404, detail=f"Tabelle {table_name} nicht gefunden.")
+            _ensure_renumber_schema(conn, table_name)
+            rows = conn.execute(
+                f"""SELECT rowid AS seq, * FROM "{table_name}"
+                ORDER BY CASE
+                  WHEN "SEQ" IS NULL OR "SEQ" = '' THEN rowid
+                  ELSE CAST("SEQ" AS INTEGER)
+                END ASC"""
+            ).fetchall()
+
+        target_rows = [row for row in rows if _row_value(row, "OUT") in {"OK", "DRYRUN"}]
+        target_rows = sorted(target_rows, key=lambda row: row["seq"])
+        total = len(target_rows)
+        _update_job(job["id"], total=total, processed=0, results=[])
+        _append_job_log(job["id"], f"Starte Roll-Back Einbau: {total} Positionen.")
+
+        dry_run = _effective_dry_run(env)
+        parent_candidates_map: Dict[str, List[Dict[str, str]]] = {}
+        if target_rows:
+            wagon_sern = (_row_value(target_rows[0], "WAGEN_SERN") or "").strip()
+            if wagon_sern:
+                parent_candidates_map = _build_mrouhi_parent_candidates(wagon_sern, env)
+        ionapi_path = _ionapi_path(env, "mi")
+        ion_cfg = load_ionapi_config(str(ionapi_path))
+        base_url = build_base_url(ion_cfg)
+        token = ""
+        if not dry_run:
+            token = get_access_token_service_account(ion_cfg)
+
+        ok_count = 0
+        error_count = 0
+        env_label = _normalize_env(env).upper()
+        with _connect() as conn:
+            for idx, row in enumerate(target_rows, start=1):
+                params = _build_mos125_params(row, mode="in")
+                log_params = {
+                    "ITNO": params.get("ITNI", ""),
+                    "SERN": params.get("BANI", ""),
+                    "PARENT_ITNO": params.get("NHAI", ""),
+                    "PARENT_SERN": params.get("NHSI", ""),
+                }
+                wagon_ctx = _wagon_log_context(row)
+                request_url = ""
+                if not params["TRDT"]:
+                    status = "ERROR: UMBAU_DATUM fehlt"
+                    ok = False
+                    _append_api_log(
+                        "rollback",
+                        log_params,
+                        {"error": "UMBAU_DATUM fehlt"},
+                        ok,
+                        "UMBAU_DATUM fehlt",
+                        env=env_label,
+                        wagon=wagon_ctx,
+                        dry_run=dry_run,
+                        request_url=request_url,
+                    )
+                elif dry_run:
+                    status = "DRYRUN"
+                    ok = True
+                    _append_api_log(
+                        "rollback",
+                        log_params,
+                        {"dry_run": True},
+                        ok,
+                        None,
+                        env=env_label,
+                        wagon=wagon_ctx,
+                        dry_run=dry_run,
+                        request_url=request_url,
+                    )
+                else:
+                    try:
+                        response = call_m3_mi_get(base_url, token, "MOS125MI", "RemoveInstall", params)
+                        ok, status_label, error_message = _mi_status(response)
+                        code, _ = _mi_extract_code_message(response)
+                        status = status_label if ok else f"ERROR: {status_label}"
+                        if ok and status_label == "OK_IDEMPOTENT":
+                            status = "OK: bereits installiert"
+                        _append_api_log(
+                            "rollback",
+                            log_params,
+                            response,
+                            ok,
+                            error_message,
+                            env=env_label,
+                            wagon=wagon_ctx,
+                            dry_run=dry_run,
+                            request_url=request_url,
+                            status=status_label,
+                        )
+                        retry_codes = {"MO12524", "MO12528"}
+                        cfgl = params.get("CFGL", "")
+                        candidates = parent_candidates_map.get(cfgl, []) if cfgl else []
+                        if code in retry_codes and len(candidates) > 1:
+                            current_parent = (params.get("NHAI", ""), params.get("NHSI", ""))
+                            for candidate in candidates:
+                                candidate_parent = (candidate.get("ITNO", ""), candidate.get("SERN", ""))
+                                if candidate_parent == current_parent:
+                                    continue
+                                params["NHAI"] = candidate_parent[0]
+                                params["NHSI"] = candidate_parent[1]
+                                log_params = {
+                                    "ITNO": params.get("ITNI", ""),
+                                    "SERN": params.get("BANI", ""),
+                                    "PARENT_ITNO": params.get("NHAI", ""),
+                                    "PARENT_SERN": params.get("NHSI", ""),
+                                }
+                                response = call_m3_mi_get(base_url, token, "MOS125MI", "RemoveInstall", params)
+                                ok, status_label, error_message = _mi_status(response)
+                                code, _ = _mi_extract_code_message(response)
+                                status = status_label if ok else f"ERROR: {status_label}"
+                                if ok and status_label == "OK_IDEMPOTENT":
+                                    status = "OK: bereits installiert"
+                                _append_api_log(
+                                    "rollback",
+                                    log_params,
+                                    response,
+                                    ok,
+                                    error_message,
+                                    env=env_label,
+                                    wagon=wagon_ctx,
+                                    dry_run=dry_run,
+                                    request_url=request_url,
+                                    status=status_label,
+                                )
+                                if code not in retry_codes:
+                                    break
+                    except Exception as exc:  # noqa: BLE001
+                        status = f"ERROR: {exc}"
+                        ok = False
+                        _append_api_log(
+                            "rollback",
+                            log_params,
+                            {"error": str(exc)},
+                            ok,
+                            str(exc),
+                            env=env_label,
+                            wagon=wagon_ctx,
+                            dry_run=dry_run,
+                            request_url=request_url,
+                            status="ERROR",
+                        )
+
+                conn.execute(
+                    f'UPDATE "{table_name}" SET "ROLLBACK"=?, "TIMESTAMP_ROLLBACK"=? WHERE rowid=?',
+                    (status, datetime.utcnow().isoformat(sep=" ", timespec="seconds"), row["seq"]),
+                )
+                conn.commit()
+
+                result = {
+                    "seq": row["seq"],
+                    "cfgr": params.get("CFGL") or params.get("CFGR") or "",
+                    "itno": params.get("ITNI") or params.get("ITNR") or _row_value(row, "ITNO"),
+                    "ser2": _row_value(row, "SER2"),
+                    "rollback": status,
+                    "ok": ok,
+                }
+                with _jobs_lock:
+                    job_ref = _jobs.get(job["id"])
+                    if job_ref is not None:
+                        job_ref["processed"] = idx
+                        job_ref.setdefault("results", []).append(result)
+                if ok:
+                    ok_count += 1
+                else:
+                    error_count += 1
+                status_label = "ERROR" if not ok else ("DRYRUN" if dry_run else "OK")
+                _append_job_log(
+                    job["id"],
+                    f"{idx}/{total} {status_label} CFGL={params.get('CFGL', '')} ITNI={params.get('ITNI', '')} "
+                    f"BANI={params.get('BANI', '')}",
+                )
+
+        _finish_job(
+            job["id"],
+            "success",
+            result={"total": total, "ok": ok_count, "error": error_count},
+        )
+    except Exception as exc:  # noqa: BLE001
+        _append_job_log(job["id"], f"Fehler: {exc}")
+        _finish_job(job["id"], "error", error=str(exc))
+
+
+@app.post("/api/renumber/rollback_from_mrouhi")
+def renumber_rollback_from_mrouhi(
+    payload: dict | None = Body(None),
+    hisn: str = Query(""),
+    env: str = Query(DEFAULT_ENV),
+) -> dict:
+    resolved = (hisn or "").strip()
+    if not resolved and isinstance(payload, dict):
+        resolved = (payload.get("hisn") or "").strip()
+    if resolved.startswith("INFO:"):
+        resolved = ""
+    hisn = resolved
+    if not hisn:
+        raise HTTPException(status_code=400, detail="HISN fehlt.")
+    job = _create_job("renumber_rollback_mrouhi", env)
+
+    def _worker() -> None:
+        try:
+            _append_job_log(job["id"], f"MROUHI Import für HISN {hisn} ...")
+            _append_api_log(
+                "mrouhi_import_start",
+                {"hisn": hisn},
+                {"status": "starting"},
+                True,
+                None,
+                env=_normalize_env(env).upper(),
+                wagon={"sern": hisn},
+                dry_run=_effective_dry_run(env),
+                program="COMPASS",
+                transaction="MROUHI",
+            )
+            rows = _load_mrouhi_rows(hisn, env)
+            if not rows:
+                raise HTTPException(status_code=404, detail="Keine MROUHI Daten gefunden.")
+            entries: List[Dict[str, str]] = []
+            wagon_itno = ""
+            wagon_sern = ""
+            for entry in rows:
+                hiit = (entry.get("HIIT") or "").strip()
+                hisn_value = (entry.get("HISN") or "").strip()
+                cfgl = (entry.get("CFGL") or "").strip()
+                itno = (entry.get("ITNO") or "").strip()
+                sern = (entry.get("SERN") or "").strip()
+                remd = (entry.get("REMD") or "").strip()
+                rmts = (entry.get("RMTS") or "").strip()
+                if not hiit or not hisn_value or not itno:
+                    continue
+                if _remd_is_blank(remd):
+                    continue
+                if not wagon_itno:
+                    wagon_itno = hiit
+                if not wagon_sern:
+                    wagon_sern = hisn_value
+                entries.append(
+                    {
+                        "HIIT": hiit,
+                        "HISN": hisn_value,
+                        "CFGL": cfgl,
+                        "ITNO": itno,
+                        "SERN": sern,
+                        "REMD": remd,
+                        "RMTS": rmts,
+                    }
+                )
+
+            if not entries:
+                raise HTTPException(status_code=400, detail="Keine gültigen MROUHI Zeilen gefunden.")
+
+            mapped_rows: List[Dict[str, Any]] = []
+            preview_rows = _build_mrouhi_preview_rows(hisn, env)
+            missing_remd = 0
+            for entry in preview_rows:
+                cfgl = entry.get("CFGL", "").strip()
+                itno = entry.get("ITNO", "").strip()
+                sern = entry.get("SERN", "").strip()
+                parent_itno = entry.get("PARENT_ITNO", "").strip()
+                parent_sern = entry.get("PARENT_SERN", "").strip()
+                remd = entry.get("REMD", "").strip()
+                rmts = entry.get("RMTS", "").strip()
+                if not remd:
+                    missing_remd += 1
+                mapped_rows.append(
+                    {
+                        "WAGEN_ITNO": wagon_itno,
+                        "WAGEN_SERN": wagon_sern,
+                        "MTRL": parent_itno,
+                        "SERN": parent_sern,
+                        "ITNO": itno,
+                        "SER2": sern,
+                        "CFGL": cfgl,
+                        "MFGL": cfgl,
+                        "UMBAU_DATUM": remd or "",
+                        "RMTS": rmts or "",
+                        "OUT": "OK",
+                    }
+                )
+
+            if not mapped_rows:
+                raise HTTPException(status_code=400, detail="Keine gültigen MROUHI Zeilen für Rollback.")
+
+            _store_mi_rows(
+                RENUMBER_WAGON_TABLE,
+                env,
+                mapped_rows,
+                wagon_itno=wagon_itno,
+                wagon_sern=wagon_sern,
+            )
+            _append_api_log(
+                "mrouhi_import",
+                {"hisn": hisn},
+                {
+                    "rows": len(mapped_rows),
+                    "wagon_itno": wagon_itno,
+                    "wagon_sern": wagon_sern,
+                    "missing_remd": missing_remd,
+                    "preview_rows": len(preview_rows),
+                },
+                True,
+                None,
+                env=_normalize_env(env).upper(),
+                wagon={"itno": wagon_itno, "sern": wagon_sern},
+                dry_run=_effective_dry_run(env),
+                program="COMPASS",
+                transaction="MROUHI",
+            )
+            _append_job_log(job["id"], f"Import abgeschlossen: {len(mapped_rows)} Positionen.")
+        except Exception as exc:  # noqa: BLE001
+            _append_job_log(job["id"], f"Fehler: {exc}")
+            _finish_job(job["id"], "error", error=str(exc))
+            return
+        _run_rollback_job(job, env)
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return {"job_id": job["id"], "status": job["status"], "env": job["env"]}
+
+
+@app.get("/api/renumber/rollback_preview")
+def renumber_rollback_preview(hisn: str = Query(..., min_length=1), env: str = Query(DEFAULT_ENV)) -> dict:
+    preview_rows = _build_mrouhi_preview_rows(hisn, env)
+    if not preview_rows:
+        raise HTTPException(status_code=404, detail="Keine Preview-Zeilen gefunden.")
+    env_label = _normalize_env(env).upper()
+    for idx, row in enumerate(preview_rows, start=1):
+        _append_api_log(
+            "rollback_preview",
+            {"hisn": hisn},
+            {"index": idx, **row},
+            True,
+            None,
+            env=env_label,
+            wagon={"sern": hisn},
+            dry_run=_effective_dry_run(env),
+            program="MROUHI",
+            transaction="PREVIEW",
+        )
+    return {"rows": len(preview_rows), "env": _normalize_env(env)}
+
+
 @app.post("/api/renumber/update")
 def renumber_update(payload: dict = Body(...), env: str = Query(DEFAULT_ENV)) -> dict:
     table_name = _table_for(RENUMBER_WAGON_TABLE, env)
@@ -1596,13 +3138,45 @@ def renumber_update(payload: dict = Body(...), env: str = Query(DEFAULT_ENV)) ->
             "NEW_PART_SER2"=?,
             "PLPN"=?,
             "MWNO"=?,
+            "MOS100_STATUS"=?,
             "MOS180_STATUS"=?,
+            "MOS050_STATUS"=?,
+            "CRS335_STATUS"=?,
+            "STS046_STATUS"=?,
+            "STS046_ADD_STATUS"=?,
+            "MMS240_STATUS"=?,
+            "CUSEXT_STATUS"=?,
             "OUT"=?,
             "UPDATED_AT"=?,
             "IN"=?,
-            "TIMESTAMP_IN"=?
+            "TIMESTAMP_IN"=?,
+            "ROLLBACK"=?,
+            "TIMESTAMP_ROLLBACK"=?
             """,
-            (new_sern, new_baureihe, umbau_datum, umbau_art, "", "", "", "", "", "", timestamp, "", ""),
+            (
+                new_sern,
+                new_baureihe,
+                umbau_datum,
+                umbau_art,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                timestamp,
+                "",
+                "",
+                "",
+                "",
+            ),
         )
         rows = conn.execute(f'SELECT rowid AS seq, * FROM "{table_name}"').fetchall()
         for row in rows:
@@ -1614,6 +3188,81 @@ def renumber_update(payload: dict = Body(...), env: str = Query(DEFAULT_ENV)) ->
         conn.commit()
         total = conn.execute(f'SELECT COUNT(*) FROM "{table_name}"').fetchone()[0]
     return {"table": table_name, "updated": total, "env": _normalize_env(env)}
+
+
+def _renumber_pending_count(conn: sqlite3.Connection, table_name: str, mode: str) -> int:
+    needs_renumber_clause = (
+        'IFNULL("SER2", \'\') <> \'\' AND '
+        '(IFNULL("NEW_PART_ITNO", \'\') <> \'\' OR IFNULL("NEW_PART_SER2", \'\') <> \'\')'
+    )
+    if mode == "out":
+        query = f'SELECT COUNT(*) FROM "{table_name}" WHERE IFNULL("OUT", \'\') = \'\''
+    elif mode == "in":
+        query = f'SELECT COUNT(*) FROM "{table_name}" WHERE IFNULL("IN", \'\') = \'\''
+    elif mode == "mos170":
+        query = (
+            f'SELECT COUNT(*) FROM "{table_name}" WHERE {needs_renumber_clause} '
+            'AND IFNULL("PLPN", \'\') = \'\''
+        )
+    elif mode == "mos170_plpn":
+        query = (
+            f'SELECT COUNT(*) FROM "{table_name}" WHERE IFNULL("PLPN", \'\') <> \'\' '
+            'AND IFNULL("MWNO", \'\') = \'\''
+        )
+    elif mode == "mos100":
+        query = (
+            f'SELECT COUNT(*) FROM "{table_name}" WHERE IFNULL("MWNO", \'\') <> \'\' '
+            'AND (IFNULL("NEW_PART_ITNO", \'\') <> \'\' OR IFNULL("NEW_PART_SER2", \'\') <> \'\') '
+            'AND IFNULL("MOS100_STATUS", \'\') = \'\''
+        )
+    elif mode == "mos180":
+        query = (
+            f'SELECT COUNT(*) FROM "{table_name}" WHERE IFNULL("MWNO", \'\') <> \'\' '
+            'AND IFNULL("MOS180_STATUS", \'\') = \'\''
+        )
+    elif mode == "mos050":
+        query = (
+            f'SELECT COUNT(*) FROM "{table_name}" WHERE IFNULL("MWNO", \'\') <> \'\' '
+            f'AND {needs_renumber_clause} AND IFNULL("MOS050_STATUS", \'\') = \'\''
+        )
+    elif mode == "crs335":
+        query = f'SELECT COUNT(*) FROM "{table_name}" WHERE IFNULL("CRS335_STATUS", \'\') = \'\''
+    elif mode == "sts046":
+        query = f'SELECT COUNT(*) FROM "{table_name}" WHERE IFNULL("STS046_STATUS", \'\') = \'\''
+    elif mode == "sts046_add":
+        query = f'SELECT COUNT(*) FROM "{table_name}" WHERE IFNULL("STS046_ADD_STATUS", \'\') = \'\''
+    elif mode == "mms240":
+        query = f'SELECT COUNT(*) FROM "{table_name}" WHERE IFNULL("MMS240_STATUS", \'\') = \'\''
+    elif mode == "cusext":
+        query = f'SELECT COUNT(*) FROM "{table_name}" WHERE IFNULL("CUSEXT_STATUS", \'\') = \'\''
+    elif mode == "rollback":
+        query = (
+            f'SELECT COUNT(*) FROM "{table_name}" '
+            'WHERE IFNULL("OUT", \'\') IN (\'OK\', \'DRYRUN\') '
+            'AND IFNULL("ROLLBACK", \'\') = \'\''
+        )
+    elif mode == "wagon_renumber":
+        return 0
+    else:
+        raise ValueError(f"Unbekannter Modus: {mode}")
+    return int(conn.execute(query).fetchone()[0] or 0)
+
+
+@app.get("/api/renumber/pending")
+def renumber_pending(mode: str, env: str = Query(DEFAULT_ENV)) -> dict:
+    normalized = (mode or "").strip().lower()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Mode fehlt.")
+    table_name = _table_for(RENUMBER_WAGON_TABLE, env)
+    with _connect() as conn:
+        if not _table_exists(conn, table_name):
+            raise HTTPException(status_code=404, detail=f"Tabelle {table_name} nicht gefunden.")
+        _ensure_renumber_schema(conn, table_name)
+        try:
+            pending = _renumber_pending_count(conn, table_name, normalized)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"mode": normalized, "pending": pending, "env": _normalize_env(env)}
 
 
 @app.post("/api/renumber/run")
@@ -2072,6 +3721,7 @@ def renumber_mos100(env: str = Query(DEFAULT_ENV)) -> dict:
                     f"""SELECT rowid AS seq, * FROM "{table_name}"
                     WHERE IFNULL("MWNO", '') <> ''
                       AND (IFNULL("NEW_PART_ITNO", '') <> '' OR IFNULL("NEW_PART_SER2", '') <> '')
+                      AND IFNULL("MOS100_STATUS", '') = ''
                     ORDER BY CASE
                       WHEN "SEQ" IS NULL OR "SEQ" = '' THEN rowid
                       ELSE CAST("SEQ" AS INTEGER)
@@ -2099,38 +3749,70 @@ def renumber_mos100(env: str = Query(DEFAULT_ENV)) -> dict:
                     params = _build_ips_mos100_params(row)
                     request_url = _build_ips_request_url(base_url, "MOS100")
                     mwno = params.get("WorkOrderNumber") or ""
-                    if not mwno:
-                        ok = False
-                        error_message = "MWNO fehlt"
-                        response = {"error": error_message}
-                    elif dry_run:
-                        ok = True
-                        error_message = None
-                        response = {"dry_run": True}
-                    else:
-                        try:
-                            response = _call_ips_service(base_url, token, "MOS100", "Chg_SERN", params)
-                            ok = int(response.get("status_code") or 0) < 400
-                            error_message = None if ok else f"HTTP {response.get('status_code')}"
-                        except Exception as exc:  # noqa: BLE001
-                            response = {"error": str(exc)}
-                            error_message = str(exc)
+                    attempt = 1
+                    ok = False
+                    error_message = None
+                    response: Any = {}
+                    status_label = "NOK"
+                    while True:
+                        if not mwno:
                             ok = False
+                            error_message = "MWNO fehlt"
+                            response = {"error": error_message}
+                            status_label = "NOK"
+                        elif dry_run:
+                            ok = True
+                            error_message = None
+                            response = {"dry_run": True}
+                            status_label = "DRYRUN"
+                        else:
+                            try:
+                                response = _call_ips_service(
+                                    base_url,
+                                    token,
+                                    "MOS100",
+                                    "Chg_SERN",
+                                    params,
+                                    env=env,
+                                )
+                                ok = int(response.get("status_code") or 0) < 400
+                                error_message = None if ok else f"HTTP {response.get('status_code')}"
+                                status_label = "OK" if ok else "NOK"
+                            except Exception as exc:  # noqa: BLE001
+                                response = {"error": str(exc)}
+                                error_message = str(exc)
+                                ok = False
+                                status_label = "NOK"
 
-                    _append_api_log(
-                        "ips_mos100_chgsern",
-                        params,
-                        response,
-                        ok,
-                        error_message,
-                        env=env_label,
-                        wagon=_wagon_log_context(row),
-                        dry_run=dry_run,
-                        request_url=request_url,
-                        program="MOS100",
-                        transaction="Chg_SERN",
-                        request_method="POST",
-                    )
+                        _append_api_log(
+                            "ips_mos100_chgsern",
+                            params,
+                            response,
+                            ok,
+                            error_message,
+                            env=env_label,
+                            wagon=_wagon_log_context(row),
+                            dry_run=dry_run,
+                            request_url=request_url,
+                            program="MOS100",
+                            transaction="Chg_SERN",
+                            request_method="POST",
+                            status=status_label,
+                        )
+                        if ok or dry_run:
+                            break
+                        if MOS100_RETRY_MAX and attempt >= MOS100_RETRY_MAX:
+                            break
+                        if MOS100_RETRY_DELAY_SEC:
+                            time.sleep(MOS100_RETRY_DELAY_SEC)
+                        attempt += 1
+
+                    with _connect() as conn:
+                        conn.execute(
+                            f'UPDATE "{table_name}" SET "MOS100_STATUS"=? WHERE rowid=?',
+                            (status_label, row["seq"]),
+                        )
+                        conn.commit()
                     processed += 1
                     with _jobs_lock:
                         job_ref = _jobs.get(job["id"])
@@ -2218,15 +3900,23 @@ def renumber_wagon(env: str = Query(DEFAULT_ENV)) -> dict:
             env_label = _normalize_env(env).upper()
             processed = 0
 
-            # MOS170 AddProp / PLPN
-            plpn = ""
-            attempt = 1
-            while True:
-                if MOS170_RETRY_MAX and attempt > MOS170_RETRY_MAX:
-                    break
+            if WAGON_RENUMBER_FIXED_PLPN:
+                plpn = WAGON_RENUMBER_FIXED_PLPN
+                with _connect() as conn:
+                    conn.execute(
+                        f'UPDATE "{table_name}" SET "PLPN"=? WHERE rowid=?',
+                        (plpn, row["seq"]),
+                    )
+                    conn.commit()
+            elif WAGON_RENUMBER_SKIP_MOS170:
+                mwno = _row_value(row, "MWNO")
+                if not mwno:
+                    raise HTTPException(status_code=400, detail="MWNO fehlt fuer MOS100 (MOS170/CMS100 uebersprungen).")
+            else:
+                # MOS170 AddProp
+                plpn = ""
                 params = _build_mos170_wagon_params(old_itno, old_sern, umbau_datum, whlo)
                 request_url = _build_m3_request_url(base_url, "MOS170MI", "AddProp", params)
-                action = "wagon_mos170_addprop" if attempt == 1 else "wagon_mos170_plpn"
                 if not params.get("ITNO") or not params.get("BANO") or not params.get("STDT"):
                     ok = False
                     error_message = "Pflichtfelder fehlen"
@@ -2235,7 +3925,6 @@ def renumber_wagon(env: str = Query(DEFAULT_ENV)) -> dict:
                     ok = True
                     error_message = None
                     response = {"dry_run": True}
-                    plpn = "DRYRUN"
                 else:
                     try:
                         response = call_m3_mi_get(base_url, token, "MOS170MI", "AddProp", params)
@@ -2247,11 +3936,10 @@ def renumber_wagon(env: str = Query(DEFAULT_ENV)) -> dict:
                         error_message = str(exc)
                         ok = False
 
-                log_response = {"plpn": plpn, "response": response}
                 _append_api_log(
-                    action,
+                    "wagon_mos170_addprop",
                     params,
-                    log_response,
+                    response,
                     ok,
                     error_message,
                     env=env_label,
@@ -2263,67 +3951,93 @@ def renumber_wagon(env: str = Query(DEFAULT_ENV)) -> dict:
                 )
                 processed += 1
                 _update_job(job["id"], processed=processed)
-                if plpn:
-                    break
+                if not ok and not dry_run:
+                    raise HTTPException(status_code=500, detail="MOS170 AddProp fehlgeschlagen.")
+
+                # MOS170 PLPN (aus AddProp Response)
                 if dry_run:
-                    break
-                if MOS170_RETRY_DELAY_SEC:
-                    time.sleep(MOS170_RETRY_DELAY_SEC)
-                attempt += 1
-
-            if not plpn:
-                raise HTTPException(status_code=500, detail="PLPN fehlt nach MOS170.")
-
-            # CMS100 MWNO
-            mwno = ""
-            attempt = 1
-            while True:
-                if CMS100_RETRY_MAX and attempt > CMS100_RETRY_MAX:
-                    break
-                params = _build_cms100_params(plpn)
-                request_url = _build_m3_request_url(base_url, "CMS100MI", "Lst_PLPN_MWNO", params)
-                if dry_run:
-                    ok = True
-                    error_message = None
-                    response = {"dry_run": True}
-                    mwno = "DRYRUN"
-                else:
-                    try:
-                        response = call_m3_mi_get(base_url, token, "CMS100MI", "Lst_PLPN_MWNO", params)
-                        error_message = _mi_error_message(response)
-                        ok = not bool(error_message)
-                        mwno = _extract_mwno(response) if ok else ""
-                    except Exception as exc:  # noqa: BLE001
-                        response = {"error": str(exc)}
-                        error_message = str(exc)
-                        ok = False
-
-                log_response = {"qomwno": mwno, "response": response}
+                    plpn = "DRYRUN"
                 _append_api_log(
-                    "wagon_cms100_lst_plpn_mwno",
+                    "wagon_mos170_plpn",
                     params,
-                    log_response,
-                    ok,
-                    error_message,
+                    {"plpn": plpn},
+                    bool(plpn),
+                    None if plpn else "PLPN fehlt nach MOS170",
                     env=env_label,
                     wagon={"itno": old_itno, "sern": old_sern, "new_itno": new_itno, "new_sern": new_sern},
                     dry_run=dry_run,
                     request_url=request_url,
-                    program="CMS100MI",
-                    transaction="Lst_PLPN_MWNO",
+                    program="MOS170MI",
+                    transaction="AddProp",
                 )
                 processed += 1
                 _update_job(job["id"], processed=processed)
-                if mwno:
-                    break
-                if dry_run:
-                    break
-                if WAGON_CMS100_RETRY_DELAY_SEC:
-                    time.sleep(WAGON_CMS100_RETRY_DELAY_SEC)
-                attempt += 1
+                if not plpn:
+                    raise HTTPException(status_code=500, detail="PLPN fehlt nach MOS170.")
+                with _connect() as conn:
+                    conn.execute(
+                        f'UPDATE "{table_name}" SET "PLPN"=? WHERE rowid=?',
+                        (plpn, row["seq"]),
+                    )
+                    conn.commit()
 
-            if not mwno:
-                raise HTTPException(status_code=500, detail="MWNO fehlt nach CMS100.")
+            if not WAGON_RENUMBER_SKIP_MOS170:
+                # CMS100 MWNO
+                mwno = ""
+                attempt = 1
+                while True:
+                    if WAGON_CMS100_RETRY_MAX and attempt > WAGON_CMS100_RETRY_MAX:
+                        break
+                    params = _build_cms100_params(plpn)
+                    request_url = _build_m3_request_url(base_url, "CMS100MI", "Lst_PLPN_MWNO", params)
+                    if dry_run:
+                        ok = True
+                        error_message = None
+                        response = {"dry_run": True}
+                        mwno = "DRYRUN"
+                    else:
+                        try:
+                            response = call_m3_mi_get(base_url, token, "CMS100MI", "Lst_PLPN_MWNO", params)
+                            error_message = _mi_error_message(response)
+                            ok = not bool(error_message)
+                            mwno = _extract_mwno(response) if ok else ""
+                        except Exception as exc:  # noqa: BLE001
+                            response = {"error": str(exc)}
+                            error_message = str(exc)
+                            ok = False
+
+                    log_response = {"qomwno": mwno, "response": response}
+                    _append_api_log(
+                        "wagon_cms100_lst_plpn_mwno",
+                        params,
+                        log_response,
+                        ok,
+                        error_message,
+                        env=env_label,
+                        wagon={"itno": old_itno, "sern": old_sern, "new_itno": new_itno, "new_sern": new_sern},
+                        dry_run=dry_run,
+                        request_url=request_url,
+                        program="CMS100MI",
+                        transaction="Lst_PLPN_MWNO",
+                    )
+                    processed += 1
+                    _update_job(job["id"], processed=processed)
+                    if mwno:
+                        break
+                    if dry_run:
+                        break
+                    if WAGON_CMS100_RETRY_DELAY_SEC:
+                        time.sleep(WAGON_CMS100_RETRY_DELAY_SEC)
+                    attempt += 1
+
+                if not mwno:
+                    raise HTTPException(status_code=500, detail="MWNO fehlt nach CMS100.")
+                with _connect() as conn:
+                    conn.execute(
+                        f'UPDATE "{table_name}" SET "MWNO"=? WHERE rowid=?',
+                        (mwno, row["seq"]),
+                    )
+                    conn.commit()
 
             # IPS MOS100 Chg_SERN
             params = {
@@ -2333,34 +4047,59 @@ def renumber_wagon(env: str = Query(DEFAULT_ENV)) -> dict:
                 "NewLotNumber": new_sern,
             }
             request_url = _build_ips_request_url(base_url, "MOS100")
-            if dry_run:
-                ok = True
-                error_message = None
-                response = {"dry_run": True}
-            else:
-                try:
-                    response = _call_ips_service(base_url, token, "MOS100", "Chg_SERN", params)
-                    ok = int(response.get("status_code") or 0) < 400
-                    error_message = None if ok else f"HTTP {response.get('status_code')}"
-                except Exception as exc:  # noqa: BLE001
-                    response = {"error": str(exc)}
-                    error_message = str(exc)
-                    ok = False
+            attempt = 1
+            ok = False
+            error_message = None
+            response: Any = {}
+            status_label = "NOK"
+            while True:
+                if dry_run:
+                    ok = True
+                    error_message = None
+                    response = {"dry_run": True}
+                    status_label = "DRYRUN"
+                else:
+                    try:
+                        response = _call_ips_service(
+                            base_url,
+                            token,
+                            "MOS100",
+                            "Chg_SERN",
+                            params,
+                            env=env,
+                        )
+                        ok = int(response.get("status_code") or 0) < 400
+                        error_message = None if ok else f"HTTP {response.get('status_code')}"
+                        status_label = "OK" if ok else "NOK"
+                    except Exception as exc:  # noqa: BLE001
+                        response = {"error": str(exc)}
+                        error_message = str(exc)
+                        ok = False
+                        status_label = "NOK"
 
-            _append_api_log(
-                "wagon_ips_mos100_chgsern",
-                params,
-                response,
-                ok,
-                error_message,
-                env=env_label,
-                wagon={"itno": old_itno, "sern": old_sern, "new_itno": new_itno, "new_sern": new_sern},
-                dry_run=dry_run,
-                request_url=request_url,
-                program="MOS100",
-                transaction="Chg_SERN",
-                request_method="POST",
-            )
+                _append_api_log(
+                    "wagon_ips_mos100_chgsern",
+                    params,
+                    response,
+                    ok,
+                    error_message,
+                    env=env_label,
+                    wagon={"itno": old_itno, "sern": old_sern, "new_itno": new_itno, "new_sern": new_sern},
+                    dry_run=dry_run,
+                    request_url=request_url,
+                    program="MOS100",
+                    transaction="Chg_SERN",
+                    request_method="POST",
+                    status=status_label,
+                )
+                if ok or dry_run:
+                    break
+                if WAGON_MOS100_RETRY_MAX and attempt >= WAGON_MOS100_RETRY_MAX:
+                    break
+                if MOS100_RETRY_DELAY_SEC:
+                    time.sleep(MOS100_RETRY_DELAY_SEC)
+                attempt += 1
+
             processed += 1
             _update_job(job["id"], processed=processed)
             if not ok:
@@ -2621,6 +4360,14 @@ def renumber_install(env: str = Query(DEFAULT_ENV)) -> dict:
     return {"job_id": job["id"], "status": job["status"], "env": job["env"]}
 
 
+@app.post("/api/renumber/rollback")
+def renumber_rollback(env: str = Query(DEFAULT_ENV)) -> dict:
+    job = _create_job("renumber_rollback", env)
+
+    threading.Thread(target=_run_rollback_job, args=(job, env), daemon=True).start()
+    return {"job_id": job["id"], "status": job["status"], "env": job["env"]}
+
+
 @app.post("/api/renumber/mos180")
 def renumber_mos180(env: str = Query(DEFAULT_ENV)) -> dict:
     job = _create_job("mos180_approve", env)
@@ -2810,6 +4557,7 @@ def renumber_mos050(env: str = Query(DEFAULT_ENV)) -> dict:
                             params,
                             namespace_override=MOS050_NAMESPACE or None,
                             body_tag_override=MOS050_BODY_TAG or None,
+                            env=env,
                         )
                         ok = int(response.get("status_code") or 0) < 400
                         error_message = None if ok else f"HTTP {response.get('status_code')}"

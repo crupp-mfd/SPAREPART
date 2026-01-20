@@ -94,7 +94,7 @@ Hinweise:
 ```bash
 python3 python/compass_to_sqlite.py \
   --scheme datalake \
-  --sql-file sql/wagons_base.sql \
+  --sql-file sql/wagons_base_prd.sql \
   --table wagons \
   --sqlite-db data/cache.db \
   --mode replace
@@ -162,7 +162,7 @@ Falls der RSRD-Anbieter andere Header-Informationen erwartet (z.B. Sendercode, M
   - `replace` (Default): Tabelle droppen und neu anlegen.
   - `truncate`: Tabelle behalten, Inhalte löschen, dann einfügen.
   - `append`: Nur anhängen.
-- Im Ordner `sql/` liegt ein Beispiel (`wagons_base.sql`) mit dem oben gezeigten Select. Alternativ kann das Statement direkt via `--sql` angegeben werden.
+- Im Ordner `sql/` liegen Beispiele (`wagons_base_prd.sql`, `wagons_base_tst.sql`) mit dem oben gezeigten Select. Alternativ kann das Statement direkt via `--sql` angegeben werden.
 - Wenn du statt Data Lake auf Source Data Access zugreifen möchtest, setze `--scheme sourcedata --catalog <Katalog>`.
 
 ### FastAPI UI & Progress Loader

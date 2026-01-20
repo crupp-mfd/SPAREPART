@@ -11,6 +11,8 @@ const loaderSteps = document.getElementById("loaderSteps");
 const loaderStepsList = document.getElementById("loaderStepsList");
 const loaderStepImageWrap = document.getElementById("loaderStepImageWrap");
 const loaderStepImage = document.getElementById("loaderStepImage");
+const loaderRandomImage = document.getElementById("loaderRandomImage");
+const loaderRandomImageWrap = document.getElementById("loaderRandomImageWrap");
 const mainMenuBtn = document.getElementById("mainMenuBtn");
 const mainMenu = document.getElementById("mainMenu");
 const envSwitch = document.getElementById("envSwitch");
@@ -35,6 +37,7 @@ const countInfo = document.getElementById("countInfo");
 const paginationInfo = document.getElementById("paginationInfo");
 const prevBtn = document.getElementById("prevPage");
 const nextBtn = document.getElementById("nextPage");
+const rollbackFromDbBtn = document.getElementById("rollbackFromDbBtn");
 const reloadBtn = document.getElementById("reloadBtn");
 // BEGIN WAGON RENNUMBERING
 const wagonRenumberBtn = document.getElementById("wagonRenumberBtn");
@@ -78,6 +81,22 @@ const swapSelectAllBtn = document.getElementById("swapSelectAllBtn");
 const swapClearSelectionBtn = document.getElementById("swapClearSelectionBtn");
 const swapPrevPageBtn = document.getElementById("swapPrevPage");
 const swapNextPageBtn = document.getElementById("swapNextPage");
+const renumberButtons = [
+  renumberExecuteBtn,
+  renumberInstallBtn,
+  wagonRenumberBtn,
+  mos170AddPropBtn,
+  cms100MwnoBtn,
+  mos100ChgSernBtn,
+  mos180ApproveBtn,
+  mos050MontageBtn,
+  crs335UpdBtn,
+  sts046DelBtn,
+  sts046AddBtn,
+  mms240UpdBtn,
+  cusextAddBtn,
+  rollbackFromDbBtn,
+];
 const swapPaginationInfo = document.getElementById("swapPaginationInfo");
 const partsModal = document.getElementById("partsModal");
 const partsModalContent = partsModal ? partsModal.querySelector(".modal-inner") : null;
@@ -117,40 +136,130 @@ const typeOptionsList = document.getElementById("typeOptions");
 const serialOptionsList = document.getElementById("serialOptions");
 const facilityOptionsList = document.getElementById("facilityOptions");
 const binOptionsList = document.getElementById("binOptions");
+const aStatFilterInput = document.getElementById("aStatFilter");
+const aStatOptionsList = document.getElementById("aStatOptions");
+const aItnoFilterInput = document.getElementById("aItnoFilter");
+const aItnoOptionsList = document.getElementById("aItnoOptions");
+const aSernFilterInput = document.getElementById("aSernFilter");
+const aSernOptionsList = document.getElementById("aSernOptions");
+const aAliiFilterInput = document.getElementById("aAliiFilter");
+const aAliiOptionsList = document.getElementById("aAliiOptions");
+const aEqtpFilterInput = document.getElementById("aEqtpFilter");
+const aEqtpOptionsList = document.getElementById("aEqtpOptions");
+const bWhloFilterInput = document.getElementById("bWhloFilter");
+const bWhloOptionsList = document.getElementById("bWhloOptions");
+const bWhslFilterInput = document.getElementById("bWhslFilter");
+const bWhslOptionsList = document.getElementById("bWhslOptions");
+const bFaciFilterInput = document.getElementById("bFaciFilter");
+const bFaciOptionsList = document.getElementById("bFaciOptions");
+const cMtrlFilterInput = document.getElementById("cMtrlFilter");
+const cMtrlOptionsList = document.getElementById("cMtrlOptions");
+const cSernFilterInput = document.getElementById("cSernFilter");
+const cSernOptionsList = document.getElementById("cSernOptions");
+const wItnoFilterInput = document.getElementById("wItnoFilter");
+const wItnoOptionsList = document.getElementById("wItnoOptions");
+const wSernFilterInput = document.getElementById("wSernFilter");
+const wSernOptionsList = document.getElementById("wSernOptions");
+const newItnoInput = document.getElementById("newItnoInput");
+const newSernInput = document.getElementById("newSernInput");
+const teilenummerGoBtn = document.getElementById("teilenummerGoBtn");
 
-const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 25;
 const CHUNK_SIZE = 150;
 const MIN_OVERLAY_MS = 900;
-const PARTS_PAGE_SIZE = 10;
-const SWAP_PAGE_SIZE = 10;
-const RSRD2_LOG_LIMIT = 400;
-const RSRD2_JOB_POLL_MS = 1500;
-const rsrd2JobOffsets = {};
-const COLUMN_ORDER = [
-  "SERIENNUMMER",
-  "BAUREIHE",
-  "ACRF",
-  "ACMC",
-  "WAGEN-TYP",
-  "KUNDEN-NUMMER",
-  "KUNDEN-NAME",
-  "LAGERORT",
-  "LAGERPLATZ",
-  "OBJSTRK",
-];
+const MIN_JOB_OVERLAY_MS = 1500; // New constant for job overlay
+const SINGLE_STEP_RETRY_MS = 3000;
 
-const COLUMN_LABELS = {
-  "SERIENNUMMER": "Seriennummer",
-  "BAUREIHE": "Modellreihe",
-  "ACRF": "ACRF",
-  "ACMC": "ACMC",
-  "WAGEN-TYP": "Modell-Typ",
-  "KUNDEN-NUMMER": "Kd.Nr.",
-  "KUNDEN-NAME": "Kundenname",
-  "LAGERORT": "StOrt",
-  "LAGERPLATZ": "LgOrt",
-  "OBJSTRK": "ObjStrk",
+// ... existing code ...
+
+const hideOverlay = (jobFinished = false) => {
+  const elapsed = Date.now() - overlayShownAt;
+  const minDuration = jobFinished ? MIN_JOB_OVERLAY_MS : MIN_OVERLAY_MS;
+  const remaining = Math.max(0, minDuration - elapsed);
+  window.setTimeout(() => {
+    loaderOverlay.classList.add("hidden");
+    clearOverlayContext();
+  }, remaining);
 };
+
+const COLUMN_LABELS_BY_MODULE = {
+  sparepart: {
+    "SERIENNUMMER": "Seriennummer",
+    "BAUREIHE": "Modellreihe",
+    "WAGEN-TYP": "Modell-Typ",
+    "KUNDEN-NUMMER": "Kd.Nr.",
+    "KUNDEN-NAME": "Kundenname",
+    "LAGERORT": "StOrt",
+    "LAGERPLATZ": "LgOrt",
+    "OBJSTRK": "ObjStrk",
+  },
+  wagenumbau: {
+    "SERIENNUMMER": "Seriennummer",
+    "BAUREIHE": "Modellreihe",
+    "WAGEN-TYP": "Modell-Typ",
+    "KUNDEN-NUMMER": "Kd.Nr.",
+    "KUNDEN-NAME": "Kundenname",
+    "LAGERORT": "StOrt",
+    "LAGERPLATZ": "LgOrt",
+    "OBJSTRK": "ObjStrk",
+  },
+  teilenummer: {
+    "A_STAT": "STAT",
+    "A_ITNO": "ITNO",
+    "A_SERN": "SERN",
+    "A_ALII": "ALII",
+    "A_EQTP": "EQTP",
+    "B_WHLO": "WHLO",
+    "B_WHSL": "WHSL",
+    "B_FACI": "FACI",
+    "C_CFGL": "CFGL",
+    "C_MTRL": "HITN",
+    "C_SERN": "HSER",
+    "W_ITNO": "W_ITNO",
+    "W_SERN": "W_SERN",
+  },
+};
+const COLUMN_ORDER_BY_MODULE = {
+  sparepart: [
+    "SERIENNUMMER",
+    "BAUREIHE",
+    "WAGEN-TYP",
+    "KUNDEN-NUMMER",
+    "KUNDEN-NAME",
+    "LAGERORT",
+    "LAGERPLATZ",
+    "OBJSTRK",
+  ],
+  wagenumbau: [
+    "SERIENNUMMER",
+    "BAUREIHE",
+    "WAGEN-TYP",
+    "KUNDEN-NUMMER",
+    "KUNDEN-NAME",
+    "LAGERORT",
+    "LAGERPLATZ",
+    "OBJSTRK",
+  ],
+  teilenummer: [
+    "A_STAT",
+    "A_ITNO",
+    "A_SERN",
+    "A_ALII",
+    "A_EQTP",
+    "B_WHLO",
+    "B_WHSL",
+    "B_FACI",
+    "C_CFGL",
+    "C_MTRL",
+    "C_SERN",
+    "W_ITNO",
+    "W_SERN",
+  ],
+};
+const getColumnOrder = () => COLUMN_ORDER_BY_MODULE[currentModule] || COLUMN_ORDER_BY_MODULE.sparepart;
+const getColumnLabels = () => COLUMN_LABELS_BY_MODULE[currentModule] || COLUMN_LABELS_BY_MODULE.sparepart;
+const getFilterFields = () => FILTER_FIELDS_BY_MODULE[currentModule] || FILTER_FIELDS_BY_MODULE.sparepart;
+const getAllFilterFields = () => Object.values(FILTER_FIELDS_BY_MODULE).flat();
 
 const OBJSTRK_COLUMNS_BY_MODULE = {
   sparepart: ["MFGL", "TX40", "ITDS", "ITNO", "SER2", "MVA1", "ERSATZ_ITNO", "ERSATZ_SERN", "PARTS"],
@@ -172,15 +281,40 @@ const OBJSTRK_LABELS = {
   PARTS: "Tausch",
 };
 
-const FILTER_FIELDS = [
-  { key: "KUNDEN-NUMMER", input: customerFilterInput, list: customerNumbersList },
-  { key: "KUNDEN-NAME", input: customerNameFilterInput, list: customerNamesList },
-  { key: "BAUREIHE", input: itemFilterInput, list: itemNumbersList },
-  { key: "WAGEN-TYP", input: typeFilterInput, list: typeOptionsList },
-  { key: "SERIENNUMMER", input: serialFilterInput, list: serialOptionsList },
-  { key: "LAGERORT", input: facilityFilterInput, list: facilityOptionsList },
-  { key: "LAGERPLATZ", input: binFilterInput, list: binOptionsList },
-];
+const FILTER_FIELDS_BY_MODULE = {
+  sparepart: [
+    { key: "KUNDEN-NUMMER", input: customerFilterInput, list: customerNumbersList },
+    { key: "KUNDEN-NAME", input: customerNameFilterInput, list: customerNamesList },
+    { key: "BAUREIHE", input: itemFilterInput, list: itemNumbersList },
+    { key: "WAGEN-TYP", input: typeFilterInput, list: typeOptionsList },
+    { key: "SERIENNUMMER", input: serialFilterInput, list: serialOptionsList },
+    { key: "LAGERORT", input: facilityFilterInput, list: facilityOptionsList },
+    { key: "LAGERPLATZ", input: binFilterInput, list: binOptionsList },
+  ],
+  wagenumbau: [
+    { key: "KUNDEN-NUMMER", input: customerFilterInput, list: customerNumbersList },
+    { key: "KUNDEN-NAME", input: customerNameFilterInput, list: customerNamesList },
+    { key: "BAUREIHE", input: itemFilterInput, list: itemNumbersList },
+    { key: "WAGEN-TYP", input: typeFilterInput, list: typeOptionsList },
+    { key: "SERIENNUMMER", input: serialFilterInput, list: serialOptionsList },
+    { key: "LAGERORT", input: facilityFilterInput, list: facilityOptionsList },
+    { key: "LAGERPLATZ", input: binFilterInput, list: binOptionsList },
+  ],
+  teilenummer: [
+    { key: "A_STAT", input: aStatFilterInput, list: aStatOptionsList },
+    { key: "A_ITNO", input: aItnoFilterInput, list: aItnoOptionsList },
+    { key: "A_SERN", input: aSernFilterInput, list: aSernOptionsList },
+    { key: "A_ALII", input: aAliiFilterInput, list: aAliiOptionsList },
+    { key: "A_EQTP", input: aEqtpFilterInput, list: aEqtpOptionsList },
+    { key: "B_WHLO", input: bWhloFilterInput, list: bWhloOptionsList },
+    { key: "B_WHSL", input: bWhslFilterInput, list: bWhslOptionsList },
+    { key: "B_FACI", input: bFaciFilterInput, list: bFaciOptionsList },
+    { key: "C_MTRL", input: cMtrlFilterInput, list: cMtrlOptionsList },
+    { key: "C_SERN", input: cSernFilterInput, list: cSernOptionsList },
+    { key: "W_ITNO", input: wItnoFilterInput, list: wItnoOptionsList },
+    { key: "W_SERN", input: wSernFilterInput, list: wSernOptionsList },
+  ],
+};
 
 const resolveEnvValue = (value) => (value && value.toUpperCase() === "TEST" ? "TEST" : "LIVE");
 let currentEnv = resolveEnvValue(window.localStorage.getItem("sparepart.env") || "LIVE");
@@ -192,6 +326,12 @@ const MODULE_META = {
     subtitle: "SPAREPART · Objektstrukturtausch",
     showSearch: true,
     loaderSubtitle: "Objektstrukturtausch",
+  },
+  teilenummer: {
+    title: "MFD Automation",
+    subtitle: "SPAREPART · Teilenummer ändern",
+    showSearch: true,
+    loaderSubtitle: "Teilenummer ändern",
   },
   wagenumbau: {
     title: "MFD Automation",
@@ -213,6 +353,13 @@ const WAGON_MODULES = {
     reloadUrl: "/api/reload",
     reloadOnStart: false,
     includeSpareparts: true,
+  },
+  teilenummer: {
+    table: "TEILENUMMER",
+    metaKey: "teilenummer",
+    reloadUrl: "/api/teilenummer/reload",
+    reloadOnStart: true,
+    includeSpareparts: false,
   },
   wagenumbau: {
     table: "Wagenumbau_Wagons",
@@ -310,8 +457,8 @@ const getInitialModule = () => {
   const params = new URLSearchParams(window.location.search);
   const paramModule = params.get("module");
   const bodyModule = document.body?.dataset?.defaultModule;
-  if (paramModule === "rsrd2" || paramModule === "wagenumbau") return paramModule;
-  if (bodyModule === "rsrd2" || bodyModule === "wagenumbau") return bodyModule;
+  if (paramModule === "rsrd2" || paramModule === "wagenumbau" || paramModule === "teilenummer") return paramModule;
+  if (bodyModule === "rsrd2" || bodyModule === "wagenumbau" || bodyModule === "teilenummer") return bodyModule;
   return "sparepart";
 };
 let currentModule = getInitialModule();
@@ -333,6 +480,9 @@ let renumberJobMode = null;
 let renumberSequence = null;
 let renumberSequenceIndex = -1;
 let renumberSequenceTransition = false;
+let singleStepLoopActive = false;
+let lastRenumberJobStatus = null;
+let lastRenumberJobError = null;
 let currentWagonItem = "";
 let currentWagonSerial = "";
 let currentPartsNodeId = null;
@@ -340,22 +490,65 @@ let currentPartsNode = null;
 let currentOriginalItno = "";
 let currentOriginalSern = "";
 let sparePartUser = window.localStorage.getItem("sparepart.user") || "";
+let teilenummerLogCount = 0;
 
 let overlayShownAt = 0;
 
-const showOverlay = () => {
-  overlayShownAt = Date.now();
-  loaderOverlay.classList.remove("hidden");
+const disableAllRenumberButtons = () => {
+  renumberButtons.forEach((button) => {
+    if (button) button.disabled = true;
+  });
 };
 
-const hideOverlay = () => {
-  const elapsed = Date.now() - overlayShownAt;
-  const remaining = Math.max(0, MIN_OVERLAY_MS - elapsed);
-  window.setTimeout(() => {
-    loaderOverlay.classList.add("hidden");
-    clearOverlayContext();
-  }, remaining);
+const enableAllRenumberButtons = () => {
+  renumberButtons.forEach((button) => {
+    if (button) button.disabled = false;
+  });
 };
+
+const setRandomOverlayImage = (enabled) => {
+  if (!loaderRandomImage || !loaderRandomImageWrap) return;
+  loaderRandomImageWrap.classList.toggle("hidden", !enabled);
+  if (enabled) {
+    const imageIndex = Math.floor(Math.random() * 6) + 1;
+    loaderRandomImage.src = `/bilder/${imageIndex}-Bild.png`;
+    loaderRandomImage.alt = `Statusbild ${imageIndex}`;
+  } else {
+    loaderRandomImage.removeAttribute("src");
+    loaderRandomImage.alt = "";
+  }
+};
+
+const setTeilenummerRandomImage = () => {
+  if (!loaderRandomImage || !loaderRandomImageWrap) return;
+  const imageIndex = Math.floor(Math.random() * 6) + 1;
+  loaderRandomImageWrap.classList.remove("hidden");
+  loaderRandomImage.onerror = () => {
+    loaderRandomImage.onerror = null;
+    loaderRandomImage.src = `/bilder/${imageIndex}-Bild.png`;
+  };
+  loaderRandomImage.src = `/bilder/${imageIndex}-Bild.jpg`;
+  loaderRandomImage.alt = `Statusbild ${imageIndex}`;
+};
+
+const showOverlay = ({ showRandomImage = true } = {}) => {
+  overlayShownAt = Date.now();
+  loaderOverlay.classList.remove("hidden");
+  const shouldShowImage = showRandomImage && !renumberSequence;
+  setRandomOverlayImage(shouldShowImage);
+};
+
+const showOverlayWithImage = (src, alt) => {
+  overlayShownAt = Date.now();
+  loaderOverlay.classList.remove("hidden");
+  if (loaderRandomImageWrap && loaderRandomImage) {
+    loaderRandomImageWrap.classList.remove("hidden");
+    loaderRandomImage.src = src;
+    loaderRandomImage.alt = alt;
+  }
+};
+
+
 
 const setIndeterminate = (enabled) => {
   progressBar.classList.toggle("indeterminate", enabled);
@@ -398,6 +591,24 @@ const buildRenumberSequence = () => [
   { label: "MMS240 Upd", endpoint: "/api/renumber/mms240", mode: "mms240" },
   { label: "CUSEXT AddFieldValue", endpoint: "/api/renumber/cusext", mode: "cusext" },
   { label: "MOS125 Einbau", endpoint: "/api/renumber/install", mode: "in" },
+];
+
+const getSingleRenumberStep = (mode) => {
+  const sequence = buildRenumberSequence();
+  const step = sequence.find((entry) => entry.mode === mode);
+  if (step) return step;
+  if (mode === "rollback") {
+    return { label: "Roll-Back", endpoint: "/api/renumber/rollback", mode: "rollback" };
+  }
+  return null;
+};
+
+const buildWagonRenumberSequence = () => [
+  { label: "MOS170 AddProp", endpoint: "/api/renumber/mos170", mode: "mos170" },
+  { label: "MOS170 PLPN", endpoint: "/api/renumber/mos170/plpn", mode: "mos170_plpn" },
+  { label: "MOS100 Chg_SERN", endpoint: "/api/renumber/mos100", mode: "mos100" },
+  { label: "MOS180 Approve", endpoint: "/api/renumber/mos180", mode: "mos180" },
+  { label: "CRS335 Upd", endpoint: "/api/renumber/crs335", mode: "crs335" },
 ];
 
 const getSequenceStepInfo = () => {
@@ -493,12 +704,12 @@ const startRenumberSequenceStep = async (index) => {
   }
 };
 
-const startRenumberSequence = async () => {
-  renumberSequence = buildRenumberSequence();
+const startRenumberSequenceWithSteps = async (steps, subtitle) => {
+  renumberSequence = steps;
   renumberSequenceIndex = -1;
   renumberSequenceTransition = false;
   if (loaderSubtitle) {
-    loaderSubtitle.textContent = "Wagenumbau Ablauf";
+    loaderSubtitle.textContent = subtitle || "Wagenumbau Ablauf";
   }
   renderSequenceSteps();
   if (renumberJobTimer) {
@@ -508,6 +719,9 @@ const startRenumberSequence = async () => {
   await startRenumberSequenceStep(0);
 };
 
+const startRenumberSequence = async () => {
+  await startRenumberSequenceWithSteps(buildRenumberSequence(), "Wagenumbau Ablauf");
+};
 const stopRenumberSequence = () => {
   renumberSequence = null;
   renumberSequenceIndex = -1;
@@ -515,13 +729,27 @@ const stopRenumberSequence = () => {
   renderSequenceSteps();
 };
 
-const fetchJSON = async (url) => {
-  const resp = await fetch(url);
+const fetchJSON = async (url, options) => {
+  const resp = await fetch(url, options);
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(text || resp.statusText);
   }
   return resp.json();
+};
+
+const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+const fetchRenumberPending = async (mode) => {
+  const data = await fetchJSON(withEnv(`/api/renumber/pending?mode=${encodeURIComponent(mode)}`));
+  return Number(data.pending || 0);
+};
+
+const waitForRenumberJobIdle = async () => {
+  while (renumberJobId) {
+    await sleep(200);
+  }
+  return { status: lastRenumberJobStatus, error: lastRenumberJobError };
 };
 
 const ensureSparePartUser = () => {
@@ -554,7 +782,8 @@ const showSwapDbView = () => {
 };
 
 const applyModuleVisibility = () => {
-  const showSparepartModule = currentModule === "sparepart" || currentModule === "wagenumbau";
+  const showSparepartModule =
+    currentModule === "sparepart" || currentModule === "wagenumbau" || currentModule === "teilenummer";
   if (sparepartModule) {
     sparepartModule.classList.toggle("hidden", !showSparepartModule);
   }
@@ -566,6 +795,7 @@ const applyModuleVisibility = () => {
 const resolveModule = (nextModule) => {
   if (nextModule === "rsrd2") return "rsrd2";
   if (nextModule === "wagenumbau") return "wagenumbau";
+  if (nextModule === "teilenummer") return "teilenummer";
   return "sparepart";
 };
 
@@ -586,10 +816,13 @@ const startModuleWorkflow = async ({ skipReload = false } = {}) => {
     }
     return;
   }
+  if (currentModule === "teilenummer") {
+    resetTeilenummerGo();
+  }
   const config = getWagonModuleConfig(currentModule);
   try {
     await ensureEnvMeta();
-    showOverlay();
+    showOverlay({ showRandomImage: true });
     if (config.reloadOnStart && !skipReload) {
       setOverlayContext({
         source: envMeta?.urls?.compass,
@@ -629,7 +862,7 @@ const setModule = (nextModule, force = false) => {
     headerSearch.classList.toggle("hidden", !meta.showSearch);
   }
   applyModuleVisibility();
-  if (resolved === "sparepart" || resolved === "wagenumbau") {
+  if (resolved === "sparepart" || resolved === "wagenumbau" || resolved === "teilenummer") {
     showWagonsView();
   }
   if (openSwapFromWagonsBtn) {
@@ -788,7 +1021,7 @@ const checkRenumberSerial = async () => {
     const url = withEnv(withTable(`/api/wagons/exists?sern=${encodeURIComponent(value)}`, table));
     const data = await fetchJSON(url);
     if (data.exists) {
-      resetRenumberSernStatus("Seriennummer existiert bereits.", true);
+      resetRenumberSernStatus("Seriennummer vergeben.", true);
     } else {
       resetRenumberSernStatus("Seriennummer frei.", false);
     }
@@ -894,6 +1127,9 @@ const applyRenumberResults = (results) => {
     if ("in" in entry) {
       row.IN = entry.in || "";
     }
+    if ("rollback" in entry) {
+      row.ROLLBACK = entry.rollback || "";
+    }
   });
 };
 
@@ -902,6 +1138,7 @@ const pollRenumberJob = async () => {
   if (renumberSequenceTransition) return;
   try {
     const job = await fetchJSON(withEnv(`/api/rsrd2/jobs/${renumberJobId}`));
+    const isSingleStepLoop = singleStepLoopActive && !renumberSequence;
     const total = Number(job.total || 0);
     const processed = Number(job.processed || 0);
     const jobType = job.type || renumberJobMode || "renumber_run";
@@ -916,7 +1153,12 @@ const pollRenumberJob = async () => {
     const isSts046AddJob = jobType === "sts046_addgenitem" || renumberJobMode === "sts046_add";
     const isMms240Job = jobType === "mms240_upd" || renumberJobMode === "mms240";
     const isCusextJob = jobType === "cusext_addfieldvalue" || renumberJobMode === "cusext";
+    const isTeilenummerJob = jobType === "teilenummer_run" || renumberJobMode === "teilenummer";
+    const isRollbackJob = jobType === "renumber_rollback" || renumberJobMode === "rollback";
     const actionLabel =
+      isTeilenummerJob
+        ? "Teilenummer"
+        :
       isWagonRenumberJob
         ? "Wagen umnummerieren"
         : isMos170Job
@@ -939,9 +1181,20 @@ const pollRenumberJob = async () => {
                           ? "CUSEXT"
                         : jobType === "renumber_install" || renumberJobMode === "in"
                           ? "Einbau"
-                          : "Ausbau";
+                          : isRollbackJob
+                            ? "Roll-Back"
+                            : "Ausbau";
     const logs = Array.isArray(job.logs) ? job.logs : [];
     const lastLog = logs.length ? logs[logs.length - 1] : "";
+    if (isTeilenummerJob && logs.length > teilenummerLogCount) {
+      const newLogs = logs.slice(teilenummerLogCount);
+      newLogs.forEach((entry) => {
+        if (typeof entry === "string" && entry.includes("abgeschlossen")) {
+          setTeilenummerRandomImage();
+        }
+      });
+      teilenummerLogCount = logs.length;
+    }
     const stepInfo = getSequenceStepInfo();
     const statusMessage = renumberSequence
       ? formatSequenceStatusLine(stepInfo, processed, total)
@@ -964,6 +1217,14 @@ const pollRenumberJob = async () => {
       renderObjStrkTable();
     }
     if (job.status === "success") {
+      lastRenumberJobStatus = "success";
+      lastRenumberJobError = null;
+      if (isSingleStepLoop) {
+        clearInterval(renumberJobTimer);
+        renumberJobTimer = null;
+        renumberJobId = null;
+        return;
+      }
       if (renumberSequence && renumberSequenceIndex < renumberSequence.length - 1) {
         renumberSequenceTransition = true;
         try {
@@ -975,20 +1236,8 @@ const pollRenumberJob = async () => {
           renumberJobTimer = null;
           renumberJobId = null;
           renumberJobMode = null;
-          hideOverlay();
-          if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
-          if (renumberInstallBtn) renumberInstallBtn.disabled = false;
-          if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
-          if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
-          if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
-          if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
-          if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
-          if (mos050MontageBtn) mos050MontageBtn.disabled = false;
-          if (crs335UpdBtn) crs335UpdBtn.disabled = false;
-          if (sts046DelBtn) sts046DelBtn.disabled = false;
-          if (sts046AddBtn) sts046AddBtn.disabled = false;
-          if (mms240UpdBtn) mms240UpdBtn.disabled = false;
-          if (cusextAddBtn) cusextAddBtn.disabled = false;
+          hideOverlay(true); // Job finished with error during sequence transition
+          enableAllRenumberButtons();
         } finally {
           renumberSequenceTransition = false;
         }
@@ -999,64 +1248,54 @@ const pollRenumberJob = async () => {
       renumberJobTimer = null;
       renumberJobId = null;
       renumberJobMode = null;
-      hideOverlay();
-      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
-      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
-      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
-      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
-      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
-      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
-      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
-      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
-      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
-      if (sts046DelBtn) sts046DelBtn.disabled = false;
-      if (sts046AddBtn) sts046AddBtn.disabled = false;
-      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
-      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      hideOverlay(true); // Job finished successfully
+      enableAllRenumberButtons();
+      setTeilenummerControlsDisabled(false);
+      if (isTeilenummerJob) {
+        resetTeilenummerGo();
+        try {
+          await loadWagons(WAGON_MODULES.teilenummer.table);
+          applyFilters();
+        } catch (error) {
+          console.error(error);
+        }
+      }
     } else if (job.status === "error") {
+      lastRenumberJobStatus = "error";
+      lastRenumberJobError = job.error || "Unbekannter Fehler";
+      if (isSingleStepLoop) {
+        clearInterval(renumberJobTimer);
+        renumberJobTimer = null;
+        renumberJobId = null;
+        return;
+      }
       stopRenumberSequence();
       clearInterval(renumberJobTimer);
       renumberJobTimer = null;
       renumberJobId = null;
       renumberJobMode = null;
-      hideOverlay();
-      if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
-      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
-      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
-      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
-      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
-      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
-      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
-      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
-      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
-      if (sts046DelBtn) sts046DelBtn.disabled = false;
-      if (sts046AddBtn) sts046AddBtn.disabled = false;
-      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
-      if (cusextAddBtn) cusextAddBtn.disabled = false;
-      // Status bleibt in der Verlaufsanzeige sichtbar.
+      hideOverlay(true); // Job finished with error
+      enableAllRenumberButtons();
+      setTeilenummerControlsDisabled(false);
     }
   } catch (error) {
     console.error(error);
+    const isSingleStepLoop = singleStepLoopActive && !renumberSequence;
+    lastRenumberJobStatus = "error";
+    lastRenumberJobError = error.message || "Statusabfrage fehlgeschlagen.";
+    if (isSingleStepLoop) {
+      clearInterval(renumberJobTimer);
+      renumberJobTimer = null;
+      renumberJobId = null;
+      return;
+    }
     stopRenumberSequence();
     clearInterval(renumberJobTimer);
     renumberJobTimer = null;
     renumberJobId = null;
     renumberJobMode = null;
-    hideOverlay();
-    if (renumberExecuteBtn) renumberExecuteBtn.disabled = false;
-    if (renumberInstallBtn) renumberInstallBtn.disabled = false;
-    if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
-    if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
-    if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
-    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
-    if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
-    if (mos050MontageBtn) mos050MontageBtn.disabled = false;
-    if (crs335UpdBtn) crs335UpdBtn.disabled = false;
-    if (sts046DelBtn) sts046DelBtn.disabled = false;
-    if (sts046AddBtn) sts046AddBtn.disabled = false;
-    if (mms240UpdBtn) mms240UpdBtn.disabled = false;
-      if (cusextAddBtn) cusextAddBtn.disabled = false;
-    // Status bleibt in der Verlaufsanzeige sichtbar.
+    hideOverlay(true); // Polling failed due to error
+    enableAllRenumberButtons();
   }
 };
 
@@ -1094,7 +1333,7 @@ const loadWagons = async (tableName) => {
 };
 
 const populateDatalists = () => {
-  FILTER_FIELDS.forEach(({ key, list }) => {
+  getFilterFields().forEach(({ key, list }) => {
     if (!list) return;
     const values = Array.from(
       new Set(
@@ -1136,12 +1375,33 @@ const normalizeObjStrkRows = (payload) => {
 const renderTableHead = () => {
   tableHead.innerHTML = "";
   const headerRow = document.createElement("tr");
-  COLUMN_ORDER.forEach((key) => {
+  const columnOrder = getColumnOrder();
+  const columnLabels = getColumnLabels();
+  columnOrder.forEach((key) => {
     const th = document.createElement("th");
-    th.textContent = COLUMN_LABELS[key] || key;
+    th.textContent = columnLabels[key] || key;
     if (key === "OBJSTRK") th.classList.add("objstrk-col");
     headerRow.appendChild(th);
   });
+  if (currentModule === "teilenummer") {
+    const th = document.createElement("th");
+    th.classList.add("mark-col");
+    const checkAllBtn = document.createElement("button");
+    checkAllBtn.type = "button";
+    checkAllBtn.className = "check-inline-btn";
+    checkAllBtn.textContent = "Check-All";
+    checkAllBtn.addEventListener("click", () => runCheckToggle(true));
+
+    const checkNoneBtn = document.createElement("button");
+    checkNoneBtn.type = "button";
+    checkNoneBtn.className = "check-inline-btn";
+    checkNoneBtn.textContent = "Check-None";
+    checkNoneBtn.addEventListener("click", () => runCheckToggle(false));
+
+    th.appendChild(checkAllBtn);
+    th.appendChild(checkNoneBtn);
+    headerRow.appendChild(th);
+  }
   tableHead.appendChild(headerRow);
 };
 
@@ -1159,36 +1419,22 @@ const renderObjStrkHead = () => {
 };
 
 const applyFilters = () => {
-  const serial = serialFilterInput.value.trim().toLowerCase();
-  const item = itemFilterInput.value.trim().toLowerCase();
-  const customer = customerFilterInput.value.trim().toLowerCase();
-  const customerName = customerNameFilterInput.value.trim().toLowerCase();
-  const type = typeFilterInput.value.trim().toLowerCase();
-  const fulltext = fulltextInput.value.trim().toLowerCase();
-  const facility = facilityFilterInput.value.trim().toLowerCase();
-  const bin = binFilterInput.value.trim().toLowerCase();
+  const fulltext = fulltextInput?.value.trim().toLowerCase() || "";
+  const filters = getFilterFields()
+    .map(({ key, input }) => ({
+      key,
+      value: input ? input.value.trim().toLowerCase() : "",
+    }))
+    .filter(({ value }) => value.length > 0);
+  const columnOrder = getColumnOrder();
 
   wagons = allWagons.filter((row) => {
-    const serialMatch = !serial || (row["SERIENNUMMER"] || "").toLowerCase().includes(serial);
-    const itemMatch = !item || (row["BAUREIHE"] || "").toLowerCase().includes(item);
-    const customerMatch = !customer || (row["KUNDEN-NUMMER"] || "").toLowerCase().includes(customer);
-    const customerNameMatch = !customerName || (row["KUNDEN-NAME"] || "").toLowerCase().includes(customerName);
-    const typeMatch = !type || (row["WAGEN-TYP"] || "").toLowerCase().includes(type);
-    const facilityMatch = !facility || (row["LAGERORT"] || "").toLowerCase().includes(facility);
-    const binMatch = !bin || (row["LAGERPLATZ"] || "").toLowerCase().includes(bin);
-    const fulltextMatch =
-      !fulltext ||
-      COLUMN_ORDER.some((key) => (row[key] || "").toLowerCase().includes(fulltext));
-    return (
-      serialMatch &&
-      itemMatch &&
-      customerMatch &&
-      customerNameMatch &&
-      typeMatch &&
-      facilityMatch &&
-      binMatch &&
-      fulltextMatch
+    const filterMatch = filters.every(({ key, value }) =>
+      (row[key] || "").toLowerCase().includes(value),
     );
+    const fulltextMatch =
+      !fulltext || columnOrder.some((key) => (row[key] || "").toLowerCase().includes(fulltext));
+    return filterMatch && fulltextMatch;
   });
 
   currentPage = 1;
@@ -1196,11 +1442,128 @@ const applyFilters = () => {
   renderPage();
 };
 
+const resetTeilenummerGo = () => {
+  if (!teilenummerGoBtn) return;
+  teilenummerGoBtn.classList.add("hidden");
+  teilenummerGoBtn.textContent = "GO (0)";
+  teilenummerGoBtn.dataset.count = "0";
+};
+
+const showTeilenummerGo = (count) => {
+  if (!teilenummerGoBtn) return;
+  const safeCount = Number.isFinite(count) ? count : Number(count) || 0;
+  if (safeCount <= 0) {
+    resetTeilenummerGo();
+    return;
+  }
+  teilenummerGoBtn.textContent = `GO (${safeCount})`;
+  teilenummerGoBtn.dataset.count = String(safeCount);
+  teilenummerGoBtn.classList.remove("hidden");
+};
+
+const setTeilenummerControlsDisabled = (disabled) => {
+  if (currentModule !== "teilenummer") return;
+  if (openSwapFromWagonsBtn) openSwapFromWagonsBtn.disabled = disabled;
+  if (teilenummerGoBtn) teilenummerGoBtn.disabled = disabled;
+};
+
+const runCheckToggle = async (checked) => {
+  if (currentModule !== "teilenummer") return;
+  if (!wagons.length) return;
+  setStatus(checked ? "Markiere Datensätze ..." : "Entferne Markierungen ...");
+  showOverlayWithImage("/bilder/animierte_sanduhr.gif", "Bitte warten");
+  try {
+    for (const row of wagons) {
+      await fetchJSON(withEnv("/api/teilenummer/check"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          A_BIRT: row.A_BIRT ?? "",
+          A_ITNO: row.A_ITNO ?? "",
+          A_SERN: row.A_SERN ?? "",
+          checked,
+        }),
+      });
+      row.CHECKED = checked ? "1" : "";
+    }
+    renderPage();
+  } catch (error) {
+    showError(error.message || "Markierung fehlgeschlagen");
+  } finally {
+    hideOverlay();
+  }
+};
+
+const prepareTeilenummerTausch = async () => {
+  if (currentModule !== "teilenummer") return;
+  const newItno = newItnoInput?.value.trim() || "";
+  const newSern = newSernInput?.value.trim() || "";
+  if (!newItno) {
+    window.alert("Bitte eine neue ITNO eingeben.");
+    return;
+  }
+  setStatus("Erstelle Tauschdaten ...");
+  showOverlayWithImage("/bilder/6-Bild.png", "Bitte warten");
+  setIndeterminate(true);
+  try {
+    const data = await fetchJSON(withEnv("/api/teilenummer/prepare"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ new_itno: newItno, new_sern: newSern }),
+    });
+    showTeilenummerGo(Number(data.count || 0));
+  } catch (error) {
+    showError(error.message || "Tauschdaten konnten nicht erstellt werden.");
+  } finally {
+    hideOverlay();
+  }
+};
+
+const runTeilenummerGo = async () => {
+  if (currentModule !== "teilenummer") return;
+  if (teilenummerGoBtn?.classList.contains("hidden")) {
+    window.alert("Bitte zuerst 'Jetzt tauschen' ausführen.");
+    return;
+  }
+  setTeilenummerControlsDisabled(true);
+  setStatus("Teilenummer-Ablauf startet ...");
+  showOverlay({ showRandomImage: false });
+  setIndeterminate(true);
+  teilenummerLogCount = 0;
+  setTeilenummerRandomImage();
+  try {
+    const runResp = await fetch(withEnv("/api/teilenummer/run"), { method: "POST" });
+    if (!runResp.ok) {
+      const text = await runResp.text();
+      throw new Error(text || "Teilenummer-Ablauf fehlgeschlagen");
+    }
+    const runData = await runResp.json();
+    renumberJobId = runData.job_id || null;
+    renumberJobMode = "teilenummer";
+    renumberResultCount = 0;
+    if (!renumberJobId) {
+      throw new Error("Kein Job-ID erhalten.");
+    }
+    if (renumberJobTimer) {
+      clearInterval(renumberJobTimer);
+    }
+    renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+    await pollRenumberJob();
+  } catch (error) {
+    console.error(error);
+    showError(error.message || "Teilenummer-Ablauf fehlgeschlagen.");
+    setTeilenummerControlsDisabled(false);
+    hideOverlay(true);
+  }
+};
+
 
 const renderPage = () => {
   tableBody.innerHTML = "";
+  const columnOrder = getColumnOrder();
+  const extraColumns = currentModule === "teilenummer" ? 1 : 0;
   if (!wagons.length) {
-    tableBody.innerHTML = `<tr><td colspan="${COLUMN_ORDER.length}">Keine Daten vorhanden.</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="${columnOrder.length + extraColumns}">Keine Daten vorhanden.</td></tr>`;
     return;
   }
 
@@ -1212,7 +1575,7 @@ const renderPage = () => {
 
   rows.forEach((wagon) => {
     const tr = document.createElement("tr");
-    COLUMN_ORDER.forEach((key) => {
+    columnOrder.forEach((key) => {
       const td = document.createElement("td");
       if (key === "OBJSTRK") {
         td.classList.add("objstrk-col");
@@ -1230,10 +1593,47 @@ const renderPage = () => {
         `;
         td.appendChild(button);
       } else {
-        td.textContent = wagon[key] ?? "";
+        let cellValue = wagon[key] ?? "";
+        if (currentModule === "teilenummer") {
+          if (key === "A_ALII" && cellValue) {
+            cellValue = String(cellValue).slice(0, 15);
+          }
+          if (key === "B_WHSL" && cellValue) {
+            cellValue = String(cellValue);
+          }
+        }
+        td.textContent = cellValue;
       }
       tr.appendChild(td);
     });
+    if (currentModule === "teilenummer") {
+      const td = document.createElement("td");
+      td.classList.add("mark-col");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "mark-checkbox";
+      checkbox.checked = String(wagon.CHECKED || "").trim() === "1";
+      checkbox.addEventListener("change", async () => {
+        try {
+          await fetchJSON(withEnv("/api/teilenummer/check"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              A_BIRT: wagon.A_BIRT ?? "",
+              A_ITNO: wagon.A_ITNO ?? "",
+              A_SERN: wagon.A_SERN ?? "",
+              checked: checkbox.checked,
+            }),
+          });
+          wagon.CHECKED = checkbox.checked ? "1" : "";
+        } catch (error) {
+          checkbox.checked = !checkbox.checked;
+          showError(error.message || "Markierung fehlgeschlagen");
+        }
+      });
+      td.appendChild(checkbox);
+      tr.appendChild(td);
+    }
     tableBody.appendChild(tr);
   });
 
@@ -1254,9 +1654,16 @@ const renderObjStrkTable = () => {
   rows.forEach(({ node, level }) => {
     const tr = document.createElement("tr");
     if (currentModule === "wagenumbau") {
+      const rollbackStatus = node.data.ROLLBACK || "";
       const inStatus = node.data.IN || "";
       const outStatus = node.data.OUT || "";
-      if (inStatus) {
+      if (rollbackStatus) {
+        if (isStatusSuccess(rollbackStatus)) {
+          tr.classList.add("objstrk-row-install-success");
+        } else if (isStatusError(rollbackStatus)) {
+          tr.classList.add("objstrk-row-error");
+        }
+      } else if (inStatus) {
         if (isStatusSuccess(inStatus)) {
           tr.classList.add("objstrk-row-install-success");
         } else if (isStatusError(inStatus)) {
@@ -1736,7 +2143,7 @@ const loadSwapData = async () => {
     source: buildSqliteUrl(envMeta?.tables?.sparepart_swaps),
     target: window.location.origin,
   });
-  showOverlay();
+  showOverlay({ showRandomImage: true });
   setStatus("LADE TAUSCHDATEN ...");
   setIndeterminate(true);
   try {
@@ -2218,8 +2625,11 @@ const initPaginationControls = () => {
 
 const initPageSizeControl = () => {
   const storedSize = Number(window.localStorage.getItem("sparepart.pageSize"));
-  if ([10, 25, 50].includes(storedSize)) {
+  if ([25, 50].includes(storedSize)) {
     pageSize = storedSize;
+  } else if (storedSize === 10) {
+    pageSize = 25;
+    window.localStorage.removeItem("sparepart.pageSize");
   }
 
   if (!pageSizeSelect) return;
@@ -2227,7 +2637,7 @@ const initPageSizeControl = () => {
   pageSizeSelect.value = String(pageSize);
   pageSizeSelect.addEventListener("change", () => {
     const nextSize = Number(pageSizeSelect.value);
-    if (![10, 25, 50].includes(nextSize)) return;
+    if (![25, 50].includes(nextSize)) return;
     pageSize = nextSize;
     window.localStorage.setItem("sparepart.pageSize", String(pageSize));
     currentPage = 1;
@@ -2333,6 +2743,93 @@ const loadObjStrk = async (mtrl, sern) => {
   }
 };
 
+const loadObjStrkFromRenumber = async () => {
+  await ensureEnvMeta();
+  setOverlayContext({
+    source: buildSqliteUrl(envMeta?.tables?.renumber_wagon),
+    target: window.location.origin,
+  });
+  showOverlay();
+  setStatus("LADE OBJEKTSTRUKTUR AUS RENUMBER_WAGON ...");
+  setIndeterminate(true);
+  try {
+    const payload = await fetchJSON(withEnv("/api/renumber/objstrk"));
+    const mtrl = (payload?.wagon_itno || currentWagonItem || "").trim();
+    const sern = (payload?.wagon_sern || currentWagonSerial || "").trim();
+    currentWagonItem = mtrl;
+    currentWagonSerial = sern;
+    handleObjStrkResponse(payload, { mtrl, sern });
+  } catch (error) {
+    console.error(error);
+    showError(error.message || "Objektstruktur konnte nicht geladen werden");
+  }
+};
+
+const resolveRollbackSerial = () => {
+  const fromFilter = serialFilterInput ? serialFilterInput.value.trim() : "";
+  if (fromFilter) return fromFilter;
+  const fallback = currentWagonSerial || "";
+  return window.prompt("Seriennummer für Rollback eingeben:", fallback) || "";
+};
+
+const startRollbackFromDb = async () => {
+  if (currentModule !== "wagenumbau") return;
+  if (renumberJobId) {
+    window.alert("Ein anderer Prozess läuft bereits.");
+    return;
+  }
+  const hisn = resolveRollbackSerial().trim();
+  if (!hisn) {
+    window.alert("Seriennummer fehlt.");
+    return;
+  }
+  disableAllRenumberButtons();
+  try {
+    await ensureEnvMeta();
+    setOverlayContext({
+      source: envMeta?.urls?.compass,
+      target: [buildSqliteUrl(envMeta?.tables?.renumber_wagon), envMeta?.urls?.mi],
+    });
+    showOverlay();
+    setStatus(`Importiere MROUHI für ${hisn} und starte Rollback ...`);
+    setIndeterminate(true);
+    const resp = await fetch(
+      withEnv(`/api/renumber/rollback_from_mrouhi?hisn=${encodeURIComponent(hisn)}`),
+      {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hisn }),
+      }
+    );
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(text || "Rollback aus DB fehlgeschlagen");
+    }
+    const data = await resp.json();
+    renumberJobId = data.job_id || null;
+    renumberJobMode = "rollback";
+    renumberResultCount = 0;
+    if (!renumberJobId) {
+      throw new Error("Keine Job-ID erhalten.");
+    }
+    setIndeterminate(false);
+    resetProgress();
+    if (renumberJobTimer) {
+      clearInterval(renumberJobTimer);
+    }
+    renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+    await pollRenumberJob();
+  } catch (error) {
+    console.error(error);
+    window.alert(error.message || "Rollback aus DB fehlgeschlagen");
+    enableAllRenumberButtons();
+    renumberJobMode = null;
+    if (!renumberJobId) {
+      hideOverlay(true);
+    }
+  }
+};
+
 const reloadData = async () => {
   reloadBtn.disabled = true;
   const originalText = reloadBtn.textContent;
@@ -2348,7 +2845,7 @@ const reloadData = async () => {
       source: envMeta?.urls?.compass,
       target: targets,
     });
-    showOverlay();
+    showOverlay({ showRandomImage: true });
     setStatus("Datenbank wird neu geladen ...");
     setIndeterminate(true);
     await reloadWagonTable(config);
@@ -2365,9 +2862,15 @@ const reloadData = async () => {
 initPaginationControls();
 initPageSizeControl();
 reloadBtn.addEventListener("click", reloadData);
+if (rollbackFromDbBtn) {
+  rollbackFromDbBtn.addEventListener("click", () => {
+    startRollbackFromDb();
+  });
+}
 // BEGIN WAGON RENNUMBERING
 if (wagonRenumberBtn) {
   wagonRenumberBtn.addEventListener("click", async () => {
+    if (renumberSequence) return;
     wagonRenumberBtn.disabled = true;
     if (renumberExecuteBtn) renumberExecuteBtn.disabled = true;
     if (renumberInstallBtn) renumberInstallBtn.disabled = true;
@@ -2391,24 +2894,7 @@ if (wagonRenumberBtn) {
       showOverlay();
       setStatus("Wagen wird umnummeriert ...");
       setIndeterminate(true);
-      const runResp = await fetch(withEnv("/api/renumber/wagon"), { method: "POST" });
-      if (!runResp.ok) {
-        const text = await runResp.text();
-        throw new Error(text || "Wagen-Umnummerierung fehlgeschlagen");
-      }
-      const runData = await runResp.json();
-      renumberJobId = runData.job_id || null;
-      renumberResultCount = 0;
-      if (!renumberJobId) {
-        throw new Error("Kein Job-ID erhalten.");
-      }
-      setIndeterminate(false);
-      updateProgress(0, 1);
-      if (renumberJobTimer) {
-        clearInterval(renumberJobTimer);
-      }
-      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
-      await pollRenumberJob();
+      await startRenumberSequenceWithSteps(buildWagonRenumberSequence(), "Wagen umbenennen");
     } catch (error) {
       console.error(error);
       wagonRenumberBtn.disabled = false;
@@ -3112,6 +3598,126 @@ if (renumberSernInput) {
   });
   renumberSernInput.addEventListener("blur", checkRenumberSerial);
 }
+const renumberSteps = document.getElementById("renumberSteps");
+
+const startSingleRenumberStep = async (mode) => {
+  if (currentModule !== "wagenumbau" || !mode) return;
+  if (renumberJobId) {
+    window.alert("Ein anderer Prozess läuft bereits.");
+    return;
+  }
+
+  disableAllRenumberButtons(); // Disable all buttons at the start of the process
+
+  const payload = getRenumberPayload();
+  if (
+    mode !== "rollback" &&
+    (!payload.new_baureihe || !payload.new_sern || !payload.umbau_datum || !payload.umbau_art)
+  ) {
+    window.alert("Bitte alle Umbaufelder ausfüllen.");
+    enableAllRenumberButtons(); // Re-enable buttons if validation fails
+    return;
+  }
+
+  try {
+    await ensureEnvMeta();
+    const needsUpdate = ["out", "wagon_renumber", "mos170"].includes(mode);
+    if (needsUpdate) {
+      // Only reset/update state for steps that start the chain.
+      const updateResp = await fetch(withEnv("/api/renumber/update"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!updateResp.ok) {
+        const text = await updateResp.text();
+        throw new Error(text || "Vorbereitung für den Einzelschritt fehlgeschlagen.");
+      }
+    }
+
+    const step = getSingleRenumberStep(mode);
+    if (!step) {
+      throw new Error(`Schritt '${mode}' nicht gefunden.`);
+    }
+    if (mode === "rollback") {
+      objStrkRows.forEach((row) => {
+        row.ROLLBACK = "";
+      });
+    }
+
+    setOverlayContext({
+      source: envMeta?.urls?.mi,
+      target: window.location.origin,
+    });
+    showOverlay();
+    singleStepLoopActive = true;
+    let pending = 0;
+    do {
+      lastRenumberJobStatus = null;
+      lastRenumberJobError = null;
+      renumberJobMode = step.mode;
+      renumberResultCount = 0;
+      resetProgress();
+      setIndeterminate(true);
+      setStatus(`Starte Einzelschritt: ${step.label}`);
+
+      const runResp = await fetch(withEnv(step.endpoint), { method: "POST" });
+      if (!runResp.ok) {
+        const text = await runResp.text();
+        throw new Error(text || `${step.label} fehlgeschlagen`);
+      }
+      const runData = await runResp.json();
+      renumberJobId = runData.job_id || null;
+      if (!renumberJobId) {
+        throw new Error("Keine Job-ID für den Einzelschritt erhalten.");
+      }
+      if (renumberJobTimer) {
+        clearInterval(renumberJobTimer);
+      }
+      renumberJobTimer = window.setInterval(pollRenumberJob, 700);
+      await pollRenumberJob();
+
+      const completion = await waitForRenumberJobIdle();
+      if (completion.status === "error") {
+        throw new Error(completion.error || `${step.label} fehlgeschlagen`);
+      }
+      pending = await fetchRenumberPending(step.mode);
+      if (pending > 0) {
+        setStatus(`Warte ${SINGLE_STEP_RETRY_MS / 1000} Sekunden ... (${pending} offen)`);
+        setIndeterminate(true);
+        await sleep(SINGLE_STEP_RETRY_MS);
+      }
+    } while (pending > 0);
+
+    hideOverlay(true);
+    enableAllRenumberButtons();
+  } catch (error) {
+    console.error(error);
+    window.alert(error.message || "Einzelschritt fehlgeschlagen");
+    hideOverlay(true); // Job finished with error
+    enableAllRenumberButtons(); // Re-enable buttons on error
+  } finally {
+    singleStepLoopActive = false;
+    renumberJobId = null;
+    renumberJobMode = null;
+    lastRenumberJobStatus = null;
+    lastRenumberJobError = null;
+    if (renumberJobTimer) {
+      clearInterval(renumberJobTimer);
+      renumberJobTimer = null;
+    }
+  }
+};
+
+if (renumberSteps) {
+  renumberSteps.addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (button && button.dataset.mode) {
+      startSingleRenumberStep(button.dataset.mode);
+    }
+  });
+}
+
 if (renumberExecuteBtn) {
   renumberExecuteBtn.addEventListener("click", async () => {
     if (currentModule !== "wagenumbau") return;
@@ -3127,19 +3733,7 @@ if (renumberExecuteBtn) {
       window.alert("Bitte alle Umbaufelder ausfüllen.");
       return;
     }
-    renumberExecuteBtn.disabled = true;
-    if (renumberInstallBtn) renumberInstallBtn.disabled = true;
-    if (wagonRenumberBtn) wagonRenumberBtn.disabled = true;
-    if (mos170AddPropBtn) mos170AddPropBtn.disabled = true;
-    if (cms100MwnoBtn) cms100MwnoBtn.disabled = true;
-    if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = true;
-    if (mos180ApproveBtn) mos180ApproveBtn.disabled = true;
-    if (mos050MontageBtn) mos050MontageBtn.disabled = true;
-    if (crs335UpdBtn) crs335UpdBtn.disabled = true;
-    if (sts046DelBtn) sts046DelBtn.disabled = true;
-    if (sts046AddBtn) sts046AddBtn.disabled = true;
-    if (mms240UpdBtn) mms240UpdBtn.disabled = true;
-    if (cusextAddBtn) cusextAddBtn.disabled = true;
+    disableAllRenumberButtons(); // Disable all buttons at the start of the process
     try {
       const resp = await fetch(withEnv("/api/renumber/update"), {
         method: "POST",
@@ -3157,36 +3751,25 @@ if (renumberExecuteBtn) {
         row.UMBAU_ART = payload.umbau_art;
         row.OUT = "";
         row.IN = "";
+        row.ROLLBACK = "";
       });
       setOverlayContext({
         source: envMeta?.urls?.mi,
         target: window.location.origin,
       });
-      showOverlay();
+      showOverlay({ showRandomImage: false });
       setStatus("Starte Wagenumbau-Ablauf ...");
       setIndeterminate(true);
       await startRenumberSequence();
     } catch (error) {
       console.error(error);
       window.alert(error.message || "Umbau speichern fehlgeschlagen");
-      renumberExecuteBtn.disabled = false;
-      if (renumberInstallBtn) renumberInstallBtn.disabled = false;
-      if (wagonRenumberBtn) wagonRenumberBtn.disabled = false;
-      if (mos170AddPropBtn) mos170AddPropBtn.disabled = false;
-      if (cms100MwnoBtn) cms100MwnoBtn.disabled = false;
-      if (mos100ChgSernBtn) mos100ChgSernBtn.disabled = false;
-      if (mos180ApproveBtn) mos180ApproveBtn.disabled = false;
-      if (mos050MontageBtn) mos050MontageBtn.disabled = false;
-      if (crs335UpdBtn) crs335UpdBtn.disabled = false;
-      if (sts046DelBtn) sts046DelBtn.disabled = false;
-      if (sts046AddBtn) sts046AddBtn.disabled = false;
-      if (mms240UpdBtn) mms240UpdBtn.disabled = false;
-      if (cusextAddBtn) cusextAddBtn.disabled = false;
+      enableAllRenumberButtons(); // Re-enable buttons on error
       renumberJobMode = null;
       stopRenumberSequence();
     } finally {
       if (!renumberJobId) {
-        hideOverlay();
+        hideOverlay(true); // Call hideOverlay with true when job finishes
       }
     }
   });
@@ -3261,14 +3844,14 @@ if (renumberInstallBtn) {
     }
   });
 }
-FILTER_FIELDS.forEach(({ input }) => {
+getAllFilterFields().forEach(({ input }) => {
   if (input) {
     input.addEventListener("input", applyFilters);
   }
 });
 if (clearFiltersBtn) {
   clearFiltersBtn.addEventListener("click", () => {
-    FILTER_FIELDS.forEach(({ input }) => {
+    getAllFilterFields().forEach(({ input }) => {
       if (input) input.value = "";
     });
     if (fulltextInput) fulltextInput.value = "";
@@ -3321,10 +3904,17 @@ if (envToggle) {
   });
 }
 const openSwapDb = () => {
+  if (currentModule === "teilenummer") {
+    prepareTeilenummerTausch();
+    return;
+  }
   loadSwapData();
 };
 if (openSwapFromWagonsBtn) {
   openSwapFromWagonsBtn.addEventListener("click", openSwapDb);
+}
+if (teilenummerGoBtn) {
+  teilenummerGoBtn.addEventListener("click", runTeilenummerGo);
 }
 if (openSwapFromObjBtn) {
   openSwapFromObjBtn.addEventListener("click", openSwapDb);
