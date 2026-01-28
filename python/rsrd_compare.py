@@ -243,6 +243,8 @@ def _parse_date(value: Any) -> str | None:
     text = str(value).strip()
     if not text:
         return None
+    if text.replace("0", "").replace(".", "").replace("-", "") == "":
+        return None
     if _DATE_RE.match(text):
         return text.split("T")[0]
     digits = re.sub(r"\D", "", text)
@@ -329,6 +331,9 @@ def _owner_company_code(value: Any) -> int | None:
 
 def _authorisation_nsa(value: Any) -> int | None:
     text = _normalize_text(value)
+    parsed = _parse_int(text)
+    if parsed is not None:
+        return parsed
     if text == "ERA":
         return 110242
     return None
@@ -505,7 +510,7 @@ RULES: List[MappingRule] = [
         field="AdministrativeDataSet.ECVerification.ECDeclarationofVerificationReference",
         section="admin",
         path="ECVerification.ECDeclarationofVerificationReference",
-        getter=lambda row: row.get("WG_ECVERNR"),
+        getter=lambda row: row.get("WG_ECVERNR") or row.get("WG_ERATVREF"),
     ),
     MappingRule(
         field="AdministrativeDataSet.ECVerification.ERATVReference",
@@ -733,7 +738,9 @@ RULES: List[MappingRule] = [
         field="DesignDataSet.HandBrake.HandBrakeType",
         section="design",
         path="HandBrake.HandBrakeType",
-        getter=lambda row: 1
+        getter=lambda row: 0
+        if not _normalize_text(row.get("BR_TYP_HANDBREM"))
+        else 1
         if _normalize_text(row.get("BR_TYP_HANDBREM")) == "FLUR-BEDIEN."
         else 2
         if _normalize_text(row.get("BR_TYP_HANDBREM")) == "BUEHNE-BEDIEN."
@@ -743,7 +750,7 @@ RULES: List[MappingRule] = [
         field="DesignDataSet.HandBrake.ParkingBrakeForce",
         section="design",
         path="HandBrake.ParkingBrakeForce",
-        getter=lambda row: _parse_float(row.get("BR_SBREMSKRAFTS")),
+        getter=lambda row: _parse_float(row.get("BR_SBREMSKRAFTS")) or None,
     ),
     MappingRule(
         field="DesignDataSet.DerailmentDetectionDevice",

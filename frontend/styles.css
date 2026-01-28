@@ -161,6 +161,29 @@ body {
   justify-content: flex-end;
 }
 
+body[data-default-module="rsrd2"] .m3-header {
+  position: relative;
+}
+
+body[data-default-module="rsrd2"] .m3-header .env-switch {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+body[data-default-module="rsrd2"] .rsrd2-actions .ids-button {
+  background: #dbeafe;
+  border: 1px solid #000;
+  color: #1e3a8a;
+  font-size: 1.3rem !important;
+  padding: 0.7rem 1rem;
+}
+
+body[data-default-module="rsrd2"] .rsrd2-actions .ids-button:hover {
+  background: #bfdbfe;
+  border-color: #000;
+}
+
 .rsrd2-subtitle {
   margin: 0.15rem 0 0;
   color: var(--sp-muted);
@@ -217,7 +240,7 @@ body {
 
 .rsrd2-log-time {
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: 1rem;
   color: #6b7280;
   min-width: 4.5rem;
 }
@@ -225,7 +248,8 @@ body {
 .rsrd2-log-message {
   flex: 1;
   color: #1f2937;
-  line-height: 1.3;
+  line-height: 1.4;
+  font-size: 1rem;
 }
 
 .menu-btn span {
@@ -318,7 +342,7 @@ body {
 }
 
 .status-line {
-  font-size: 2.05rem;
+  font-size: 1.1rem;
   font-weight: 600;
   margin-bottom: 0.3rem;
   display: inline-block;

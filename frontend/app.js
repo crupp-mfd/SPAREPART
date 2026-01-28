@@ -169,6 +169,8 @@ const CHUNK_SIZE = 150;
 const MIN_OVERLAY_MS = 900;
 const MIN_JOB_OVERLAY_MS = 1500; // New constant for job overlay
 const SINGLE_STEP_RETRY_MS = 3000;
+const RSRD2_LOG_LIMIT = 200;
+const RSRD2_JOB_POLL_MS = 1500;
 
 // ... existing code ...
 
@@ -491,6 +493,8 @@ let currentOriginalItno = "";
 let currentOriginalSern = "";
 let sparePartUser = window.localStorage.getItem("sparepart.user") || "";
 let teilenummerLogCount = 0;
+const rsrd2JobOffsets = {};
+const rsrd2JobStartTimes = {};
 
 let overlayShownAt = 0;
 
@@ -538,13 +542,16 @@ const showOverlay = ({ showRandomImage = true } = {}) => {
   setRandomOverlayImage(shouldShowImage);
 };
 
-const showOverlayWithImage = (src, alt) => {
+const showOverlayWithImage = (src, alt, statusMessage) => {
   overlayShownAt = Date.now();
   loaderOverlay.classList.remove("hidden");
   if (loaderRandomImageWrap && loaderRandomImage) {
     loaderRandomImageWrap.classList.remove("hidden");
     loaderRandomImage.src = src;
     loaderRandomImage.alt = alt;
+  }
+  if (statusMessage) {
+    setStatus(statusMessage);
   }
 };
 
@@ -2196,6 +2203,18 @@ const appendRsrd2Log = (message, variant = "info") => {
   rsrd2Log.scrollTop = rsrd2Log.scrollHeight;
 };
 
+const pruneLastRsrd2InfoIfMatch = (message) => {
+  if (!rsrd2Log || !message) return;
+  const lastEntry = rsrd2Log.lastElementChild;
+  if (!lastEntry) return;
+  if (!lastEntry.classList.contains("rsrd2-log-entry--info")) return;
+  const lastMessage = lastEntry.querySelector(".rsrd2-log-message");
+  if (!lastMessage) return;
+  if (lastMessage.textContent === message) {
+    rsrd2Log.removeChild(lastEntry);
+  }
+};
+
 const clearRsrd2Log = () => {
   if (!rsrd2Log) return;
   rsrd2Log.innerHTML = "";
@@ -2251,8 +2270,7 @@ const runRsrdAction = async ({ url, startMessage, successMessage, onSuccess }) =
   rsrd2Status.textContent = startText;
   appendRsrd2Log(startText, "info");
   ensureRsrdLoaderSubtitle();
-  showOverlay();
-  setStatus(startText);
+  showOverlayWithImage("/bilder/RSRD-1.svg", "RSRD2", startText);
   setIndeterminate(true);
   try {
     const resp = await fetch(url, { method: "POST" });
@@ -2301,16 +2319,29 @@ const watchRsrdJob = (jobId, successBuilder) =>
         }
         rsrd2JobOffsets[jobId] = logs.length;
         if (data.status === "running") {
+          const startedAt = rsrd2JobStartTimes[jobId] || Date.now();
+          rsrd2JobStartTimes[jobId] = startedAt;
+          const elapsedSec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+          const mins = String(Math.floor(elapsedSec / 60)).padStart(2, "0");
+          const secs = String(elapsedSec % 60).padStart(2, "0");
+          const runningMessage = logs.length
+            ? logs[logs.length - 1]
+            : `RSRD2 läuft ... (${mins}:${secs})`;
+          if (rsrd2Status) rsrd2Status.textContent = runningMessage;
+          setStatus(runningMessage);
           window.setTimeout(poll, RSRD2_JOB_POLL_MS);
           return;
         }
         delete rsrd2JobOffsets[jobId];
+        delete rsrd2JobStartTimes[jobId];
         if (data.status === "success") {
           const summary =
             typeof successBuilder === "function" ? successBuilder(data.result || {}, data) : "Aktion abgeschlossen.";
           if (summary) {
+            pruneLastRsrd2InfoIfMatch(summary);
             appendRsrd2Log(summary, "success");
             if (rsrd2Status) rsrd2Status.textContent = summary;
+            setStatus(summary);
           }
           resolve(data);
         } else {
@@ -2322,6 +2353,8 @@ const watchRsrdJob = (jobId, successBuilder) =>
       } catch (error) {
         appendRsrd2Log(error.message || "Statusabfrage fehlgeschlagen.", "error");
         if (rsrd2Status) rsrd2Status.textContent = error.message || "Statusabfrage fehlgeschlagen.";
+        delete rsrd2JobOffsets[jobId];
+        delete rsrd2JobStartTimes[jobId];
         reject(error);
       }
     };
@@ -2334,8 +2367,7 @@ const startRsrdJob = async ({ url, startMessage, successBuilder, afterSuccess })
   rsrd2Status.textContent = startText;
   appendRsrd2Log(startText, "info");
   ensureRsrdLoaderSubtitle();
-  showOverlay();
-  setStatus(startText);
+  showOverlayWithImage("/bilder/RSRD-1.svg", "RSRD2", startText);
   setIndeterminate(true);
   try {
     const resp = await fetch(url, { method: "POST" });
@@ -2345,6 +2377,14 @@ const startRsrdJob = async ({ url, startMessage, successBuilder, afterSuccess })
     }
     const data = await resp.json().catch(() => ({}));
     const jobId = data.job_id;
+    if (jobId) {
+      rsrd2JobOffsets[jobId] = 0;
+      rsrd2JobStartTimes[jobId] = Date.now();
+      const startedMessage = `Job gestartet (${jobId}).`;
+      appendRsrd2Log(startedMessage, "info");
+      if (rsrd2Status) rsrd2Status.textContent = startedMessage;
+      setStatus(startedMessage);
+    }
     await watchRsrdJob(jobId, successBuilder);
     if (afterSuccess) {
       await afterSuccess();

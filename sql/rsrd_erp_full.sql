@@ -4,9 +4,8 @@ WITH TextLookup AS (
         SELECT
             TXID,
             TX60,
-            ROW_NUMBER() OVER (PARTITION BY TXID ORDER BY Timestamp DESC) AS rn
+            ROW_NUMBER() OVER (PARTITION BY TXID ORDER BY Timestamp DESC, LINO DESC) AS rn
         FROM MSYTXL
-        WHERE LINO = 1
     ) t
     WHERE rn = 1
 ),
