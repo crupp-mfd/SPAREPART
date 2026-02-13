@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MFDApps Portal</title>
+    <script src="./portal-config.js"></script>
+    <style>
+      :root {
+        --bg: #f3f6fb;
+        --panel: #ffffff;
+        --text: #122033;
+        --muted: #4a5d78;
+        --border: #d7dfec;
+        --brand: #0f4a8a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        background: linear-gradient(135deg, #f3f6fb 0%, #e7eef8 100%);
+        color: var(--text);
+        min-height: 100vh;
+      }
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 28px 18px 40px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 30px;
+      }
+      p {
+        margin: 0 0 20px;
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+      a.card {
+        display: block;
+        padding: 14px;
+        border-radius: 10px;
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--border);
+        text-decoration: none;
+      }
+      a.card:hover {
+        border-color: var(--brand);
+      }
+      .title {
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+      .sub {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .missing {
+        opacity: 0.55;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>MFDApps</h1>
+      <p>Einstiegspunkt fuer die getrennten Anwendungen im Monorepo.</p>
+      <section class="grid" id="appGrid"></section>
+    </main>
+    <script>
+      (function renderApps() {
+        const cfg = window.__MFDAPPS_PORTAL_CONFIG__ || {};
+        const apps = [
+          ["AppObjektstruktur", "Objektstrukturtausch", cfg.APP_OBJEKTSTRUKTUR_URL],
+          ["AppBremsenumbau", "Wagenumbau", cfg.APP_BREMSENUMBAU_URL],
+          ["AppTeilenummer", "Teilenummern", cfg.APP_TEILENUMMER_URL],
+          ["AppWagensuche", "Wagensuche", cfg.APP_WAGENSUCHE_URL],
+          ["AppRSRD", "RSRD Vergleiche", cfg.APP_RSRD_URL],
+          ["AppGoldenView", "GoldenView Generator", cfg.APP_GOLDENVIEW_URL],
+          ["AppSQL-API", "SQL API fuer ChatGPT", cfg.APP_SQL_API_URL],
+          ["AppMehrkilometer", "Mehrkilometer Abrechnung", cfg.APP_MEHRKILOMETER_URL],
+        ];
+        const grid = document.getElementById("appGrid");
+        apps.forEach(([name, subtitle, url]) => {
+          const a = document.createElement("a");
+          a.className = "card";
+          if (!url) {
+            a.href = "#";
+            a.classList.add("missing");
+            a.setAttribute("aria-disabled", "true");
+          } else {
+            a.href = String(url);
+            a.target = "_blank";
+            a.rel = "noopener";
+          }
+          a.innerHTML = `<div class="title">${name}</div><div class="sub">${subtitle}</div>`;
+          grid.appendChild(a);
+        });
+      })();
+    </script>
+  </body>
+</html>

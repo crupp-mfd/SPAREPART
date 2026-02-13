@@ -1,0 +1,13 @@
+/apps/AppMFD/ @crupp-mfd
+/apps/AppBremsenumbau/ @crupp-mfd
+/apps/AppGoldenView/ @crupp-mfd
+/apps/AppMehrkilometer/ @crupp-mfd
+/apps/AppObjektstruktur/ @crupp-mfd
+/apps/AppRSRD/ @crupp-mfd
+/apps/AppSQL-API/ @crupp-mfd
+/apps/AppTeilenummer/ @crupp-mfd
+/apps/AppWagensuche/ @crupp-mfd
+/packages/sparepart-shared/ @crupp-mfd
+/python/ @crupp-mfd
+/scripts/ @crupp-mfd
+/frontend/ @crupp-mfd

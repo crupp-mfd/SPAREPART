@@ -8,6 +8,10 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Dict, List, Optional
 
+try:  # pragma: no cover - script vs package execution
+    from .env_loader import get_runtime_root, load_project_dotenv
+except ImportError:  # type: ignore
+    from env_loader import get_runtime_root, load_project_dotenv  # type: ignore
 from compass_query import (  # type: ignore
     IONAPI_DIR,
     JDBC_DIR,
@@ -22,8 +26,10 @@ from compass_query import (  # type: ignore
     run_query,
 )
 
+load_project_dotenv()
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SQLITE_PATH = PROJECT_ROOT / "data" / "cache.db"
+DEFAULT_SQLITE_PATH = get_runtime_root() / "cache.db"
 PROGRESS_CHUNK_SIZE = 100
 
 

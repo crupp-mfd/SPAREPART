@@ -21,14 +21,14 @@ from compass_query import (  # type: ignore
     run_query,
 )
 try:  # pragma: no cover - import helper works both as module and script
-    from .env_loader import load_project_dotenv
+    from .env_loader import get_runtime_root, load_project_dotenv
 except ImportError:  # type: ignore
-    from env_loader import load_project_dotenv  # type: ignore
+    from env_loader import get_runtime_root, load_project_dotenv  # type: ignore
 
 load_project_dotenv()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "cache.db"
+DEFAULT_DB_PATH = get_runtime_root() / "cache.db"
 DEFAULT_ENV = os.getenv("SPAREPART_ENV", "prd").lower()
 ENV_ALIASES = {
     "live": "prd",
@@ -40,9 +40,14 @@ ENV_ALIASES = {
 ENV_SUFFIXES = {"prd": "_PRD", "tst": "_TST"}
 DEFAULT_TABLE = "RSRD_ERP_WAGONNO"
 DEFAULT_SQL = """
-SELECT SERN
-FROM MILOIN
-WHERE EQTP = '100' AND STAT = '20'
+SELECT
+    A.SERN,
+    A.ITNO,
+    A.ALII
+FROM MILOIN A
+LEFT JOIN MITMAS B ON A.ITNO = B.ITNO
+WHERE B.ITTY = '100'
+  AND A.STAT = '20'
 """
 
 
@@ -74,10 +79,17 @@ def ensure_table(conn: sqlite3.Connection, table: str, truncate: bool) -> None:
         CREATE TABLE IF NOT EXISTS {table} (
             wagon_sern TEXT PRIMARY KEY,
             wagon_sern_numeric TEXT,
+            wagon_itno TEXT,
+            wagon_typ TEXT,
             updated_at TEXT NOT NULL
         )
         """
     )
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    for column in ("wagon_itno", "wagon_typ"):
+        if column in existing:
+            continue
+        conn.execute(f'ALTER TABLE "{table}" ADD COLUMN "{column}" TEXT')
     if truncate:
         conn.execute(f"DELETE FROM {table}")
 
@@ -86,13 +98,24 @@ def insert_rows(conn: sqlite3.Connection, table: str, rows: List[Dict[str, str]]
     now = datetime.now(timezone.utc).isoformat()
     conn.executemany(
         f"""
-        INSERT INTO {table} (wagon_sern, wagon_sern_numeric, updated_at)
-        VALUES (?, ?, ?)
+        INSERT INTO {table} (wagon_sern, wagon_sern_numeric, wagon_itno, wagon_typ, updated_at)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(wagon_sern) DO UPDATE SET
             wagon_sern_numeric=excluded.wagon_sern_numeric,
+            wagon_itno=excluded.wagon_itno,
+            wagon_typ=excluded.wagon_typ,
             updated_at=excluded.updated_at
         """,
-        [(row["wagon_sern"], row["wagon_sern_numeric"], now) for row in rows],
+        [
+            (
+                row["wagon_sern"],
+                row["wagon_sern_numeric"],
+                row.get("wagon_itno", ""),
+                row.get("wagon_typ", ""),
+                now,
+            )
+            for row in rows
+        ],
     )
     return len(rows)
 
@@ -112,10 +135,19 @@ def fetch_wagons(args: argparse.Namespace) -> List[Dict[str, str]]:
     rows = []
     for row in result["rows"]:
         sern = (row.get("SERN") if isinstance(row, dict) else None) or ""
+        itno = (row.get("ITNO") if isinstance(row, dict) else None) or ""
+        alii = (row.get("ALII") if isinstance(row, dict) else None) or ""
         normalized = normalize_sern(sern)
         if not sern:
             continue
-        rows.append({"wagon_sern": sern, "wagon_sern_numeric": normalized})
+        rows.append(
+            {
+                "wagon_sern": sern,
+                "wagon_sern_numeric": normalized,
+                "wagon_itno": itno,
+                "wagon_typ": alii,
+            }
+        )
     return rows
 
 

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MFD Automation</title>
+    <link rel="stylesheet" href="/ids-enterprise.css?v=1" />
+    <link rel="stylesheet" href="/styles.css?v=44" />
+  </head>
+  <body class="wagensuche-page">
+    <div id="loaderOverlay" class="loader-overlay hidden">
+      <section class="card loader-card" id="loaderPanel">
+        <h1>MFD Rail</h1>
+        <p class="subtitle" id="loaderSubtitle">Wagensuche</p>
+        <div class="status-line" id="statusText">Lade Wagendaten ...</div>
+        <div class="progress-wrapper">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="progress-detail" id="progressDetail">Bitte warten</div>
+      </section>
+    </div>
+    <header class="m3-header">
+      <div class="header-left">
+        <div class="menu-wrapper">
+          <button class="menu-btn" id="mainMenuBtn" aria-label="Menü">
+            <span></span><span></span><span></span>
+          </button>
+          <div class="menu-dropdown hidden" id="mainMenu">
+            <button type="button" class="menu-item" data-page="/objektstrukturtausch.html?module=sparepart">1. Objektstrukturtausch</button>
+            <button type="button" class="menu-item" data-page="/objektstrukturtausch.html?module=rsrd2">2. RSRD2 Sync</button>
+            <button type="button" class="menu-item" data-page="/wagenumbau.html">3. Bremsenumbau</button>
+            <button type="button" class="menu-item" data-page="/teilenummer.html">4. Teilenummer ändern</button>
+            <button type="button" class="menu-item menu-item--active" data-page="/wagensuche.html">5. Wagensuche</button>
+          </div>
+        </div>
+        <div>
+          <div class="app-title">MFD Automation</div>
+          <div class="app-subtitle">MFDApps &middot; Wagensuche</div>
+        </div>
+      </div>
+      <div class="env-switch" id="envSwitch" data-env="live">
+        <span class="env-label env-label--test">TEST</span>
+        <button id="envToggle" class="env-toggle" type="button" aria-label="Umgebung wechseln">
+          <span class="env-toggle-handle"></span>
+        </button>
+        <span class="env-label env-label--live">LIVE</span>
+      </div>
+    </header>
+    <main>
+      <section class="card wagensuche-card">
+        <div class="wagensuche-header">
+          <div>
+            <h2>Wagensuche</h2>
+            <p>Wagennummer eingeben, Vorschläge auswählen, Modell und Modellreihe anzeigen.</p>
+          </div>
+          <button id="reloadBtn" class="ids-button" type="button">Daten vorladen</button>
+        </div>
+        <div class="wagensuche-form">
+          <label class="filter-label" for="wagonSearch">Wagennummer</label>
+          <input id="wagonSearch" class="search-field" type="text" placeholder="z.B. 31 80 ..." autocomplete="off" />
+          <div id="suggestions" class="suggestions hidden" role="listbox" aria-label="Wagennummern Vorschläge"></div>
+          <div id="selectedInfo" class="selected-info">Noch keine Wagennummer ausgewählt.</div>
+          <div id="positionInfo" class="position-info">Letzte Position: noch keine Daten.</div>
+          <div id="mapWrap" class="map-wrap hidden">
+            <div id="wagonMap" class="wagon-map" aria-label="Wagenposition auf Google Maps"></div>
+          </div>
+          <div id="wagensucheStatus" class="wagensuche-status">Noch keine Daten geladen.</div>
+        </div>
+      </section>
+    </main>
+    <script src="/api-config.js?v=1"></script>
+    <script src="/wagensuche.js?v=5"></script>
+  </body>
+</html>

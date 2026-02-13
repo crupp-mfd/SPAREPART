@@ -1,0 +1,42 @@
+# VCS
+.git
+.gitignore
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Node / frontend tooling
+node_modules/
+
+# Secrets / credentials
+credentials/**
+apps/AppMFD/credentials/**
+
+# Local data / artifacts (exclude heavy runtime dumps from build context)
+data/**
+!data/RSRD.wsdl
+!data/rsrd_erp_mapping.json
+!data/*.json
+!data/*.wsdl
+!data/*.xlsx
+!data/*.md
+exports/
+apps/*/runtime/**
+apps/*/legacy_source/Output/**
+apps/*/legacy_source/Quellen/**
+logs/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Logs / temp
+*.log
+tmp/
+temp/

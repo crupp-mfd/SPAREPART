@@ -1,0 +1,9 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "app-sql-api"
+version = "0.1.0"
+description = "MFDApps SQL API"
+requires-python = ">=3.11"

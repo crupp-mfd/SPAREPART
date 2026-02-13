@@ -1,45 +1,101 @@
-# MFD Automation
+# MFDApps
 
-Zentrales Repository für interne MFD-Automatisierungsprojekte. Aktuell enthält es zwei Module:
+Monorepo fuer die getrennten MFD-Anwendungen mit OneDrive-Workspace-Modell und app-spezifischem Deploy.
 
-1. **SPAREPART – Objektstrukturtausch / Wagenumbau** (bestehendes UI + API)
-2. **RSRD2 Sync** (in Vorbereitung, eigene UI-Sektion innerhalb derselben App)
+## OneDrive Workspace Standard
 
-Beide Module teilen sich Infrastruktur wie IonAPI-Zugänge, das Compass/SQLite-Caching und den FastAPI-Server.
+- Basis: `.../ICT - Dokumente/AUTOMATE`
+- Pro Entwickler eigener Clone: `.../workspaces/<user>/MFDApps`
+- Kein gemeinsam genutztes `.git`-Arbeitsverzeichnis fuer mehrere Personen
 
-## Struktur
-
-- `credentials/` – lokale Secrets (z.B. `.ionapi`). Wird nicht versioniert.
-- `python/m3_api_call.py` – CLI, die MOS256MI (oder andere MI) aufruft und das Ergebnis als JSON ausgibt.
-- `python/compass_query.py` – CLI für Infor Data Fabric / Compass JDBC.
-- `python/compass_to_sqlite.py` – Lädt Compass-Abfragen direkt in eine SQLite-Tabelle.
-- `python/load_erp_wagons.py` – holt ERP-Wagennummern per Compass und speichert sie in `RSRD_ERP_WAGONNO`.
-- `python/rsrd2_sync.py` – SOAP/RSRD2-Connector, schreibt Wagenstammdaten in SQLite.
-- `python/web_server.py` – FastAPI-Server inkl. REST-Endpunkten für die SQLite-Daten.
-- `frontend/` – statische UI (Infor CSS) mit Ladebalken und Pagination.
-- `scripts/run-m3-call.js` – Node.js-Brücke, die das Python-Skript ausführt und die Antwort für weitere Verarbeitung bereitstellt.
-
-## Voraussetzungen
-
-1. Python 3.10+ (Skripte nutzen automatisch ein virtuelles Environment)
-2. Node.js 18+ (nur für bestehende Skripte; das neue UI/Backend läuft komplett unter Python/FastAPI)
-3. Eine gültige `.ionapi` Datei in `credentials/ionapi/` (z.B. `MFD_Backend_Python.ionapi`)
-4. Für Compass-Abfragen zusätzlich eine `.ionapi` für den JDBC-Zugang (z.B. `Infor Compass JDBC Driver.ionapi`) sowie das JDBC JAR in `credentials/jdbc/`.
-
-## Setup & Start
+Workspace-Anlage (pro User):
 
 ```bash
-# einmalig
-./scripts/bootstrap.sh
-
-# danach
-./scripts/dev-server.sh
+./scripts/setup-onedrive-workspace.sh --user <user>
 ```
 
-- `bootstrap.sh` erstellt bei Bedarf `.env` aus `.env.template`, richtet `.venv` inklusive Dependencies ein und lädt die ERP-Wagennummern in `RSRD_ERP_WAGONNO`.
-- `dev-server.sh` liest automatisch `.env`, aktiviert das virtuelle Environment und startet `uvicorn`.
+## App-Struktur
 
-Alle Python-Skripte und der FastAPI-Server laden die `.env` selbstständig (via `python-dotenv`). Manuelle `export`-Befehle sind nur noch nötig, wenn Umgebungsvariablen bewusst überschrieben werden sollen.
+Alle Programme liegen unter `apps/`:
+
+1. `AppMFD` (Einstieg/Portal + Credentials-Standardposition)
+2. `AppBremsenumbau`
+3. `AppGoldenView`
+4. `AppMehrkilometer`
+5. `AppObjektstruktur`
+6. `AppRSRD`
+7. `AppSQL-API`
+8. `AppTeilenummer`
+9. `AppWagensuche`
+
+Gemeinsame Bibliothek: `packages/sparepart-shared`.
+
+### Root-Regel (Trennung)
+
+- Unter `frontend/` im Repo-Root liegt nur `index.html` als Einstieg.
+- App-spezifische Frontend-Dateien liegen ausschließlich in `apps/<AppName>/frontend/`.
+- App-spezifische SQL-Dateien liegen ausschließlich in `apps/<AppName>/sql/`.
+- Gemeinsame Infra im Root bleibt erlaubt (`python/` Connectoren, `scripts/` Dev/Deploy, Credentials-Pfade via `MFDAPPS_CREDENTIALS_DIR`).
+
+## Runtime und Secrets
+
+- `MFDAPPS_HOME`: optionales Basisverzeichnis (Default: Repo-Root)
+- `MFDAPPS_ENFORCE_ONEDRIVE`: sperrt lokale Starts außerhalb OneDrive-Workspace (Default `1`)
+- `MFDAPPS_RUNTIME_ROOT`: Runtime-Dateien (`cache.db`, Logs, Exporte), Default `data/`
+- `MFDAPPS_CREDENTIALS_DIR`: Secrets-Verzeichnis, Default `apps/AppMFD/credentials` mit Legacy-Fallback `credentials/`
+
+Secrets gehoeren nicht ins Repo.
+
+## Lokaler Start
+
+```bash
+# AppMFD (Default)
+./scripts/dev-server.sh
+
+# Eine konkrete App
+SERVICE=AppRSRD ./scripts/dev-server.sh --port 8001
+```
+
+Pro App existieren ausserdem eigene Dev-Skripte:
+
+```bash
+./apps/AppMFD/dev-server.sh --port 8000
+./apps/AppRSRD/dev-server.sh --port 8001
+./apps/AppGoldenView/dev-server.sh --port 8002
+```
+
+## Deploy (Azure Container Apps)
+
+Jede App hat ein eigenes Deploy-Skript:
+
+```bash
+./apps/AppMFD/deploy.sh
+./apps/AppBremsenumbau/deploy.sh
+./apps/AppGoldenView/deploy.sh
+./apps/AppMehrkilometer/deploy.sh
+./apps/AppObjektstruktur/deploy.sh
+./apps/AppRSRD/deploy.sh
+./apps/AppSQL-API/deploy.sh
+./apps/AppTeilenummer/deploy.sh
+./apps/AppWagensuche/deploy.sh
+```
+
+GitHub Actions Workflow: `.github/workflows/deploy-split.yml` (path-filter je App).
+Azure deployt nur aus GitHub Actions.
+
+## Team-Git-Regeln
+
+- Branch-Schema: `feature/<app>/<topic>`
+- Eine App pro PR
+- Squash-Merge auf `main`
+- CODEOWNERS trennt Review-Verantwortung pro `apps/App*/`
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/shared -q
+```
 
 ## Nutzung
 
@@ -53,7 +109,7 @@ python3 python/m3_api_call.py \\
   --use-example
 ```
 
-Ohne weitere Argumente sucht das Skript automatisch nach einer `.ionapi` in `credentials/ionapi/`.
+Ohne weitere Argumente sucht das Skript automatisch nach einer `.ionapi` in `${MFDAPPS_CREDENTIALS_DIR}/ionapi` (Default: `apps/AppMFD/credentials/ionapi`).
 
 ### Über Node.js (z.B. für UI-Integration)
 
@@ -85,7 +141,7 @@ python3 python/compass_query.py \
 
 Hinweise:
 
-- `.ionapi` (default `Infor Compass JDBC Driver.ionapi`) und JDBC-JAR werden automatisch aus `credentials/ionapi/` bzw. `credentials/jdbc/` geladen. Bei Bedarf per `--ionapi` bzw. `--jdbc-jar` überschreibbar.
+- `.ionapi` (default `Infor Compass JDBC Driver.ionapi`) und JDBC-JAR werden automatisch aus `${MFDAPPS_CREDENTIALS_DIR}/ionapi` bzw. `${MFDAPPS_CREDENTIALS_DIR}/jdbc` geladen. Bei Bedarf per `--ionapi` bzw. `--jdbc-jar` überschreibbar.
 - `--scheme` bestimmt das Ziel (`datalake` ist Standard). Nur für `sourcedata` ist `--catalog` erforderlich (z.B. `M3BE`).
 - SQL kann auch aus einer Datei stammen (`--sql-file`). Mit `--output table` wird das Ergebnis als TSV ausgegeben, Standard ist JSON.
 
@@ -94,9 +150,9 @@ Hinweise:
 ```bash
 python3 python/compass_to_sqlite.py \
   --scheme datalake \
-  --sql-file sql/wagons_base_prd.sql \
+  --sql-file apps/AppObjektstruktur/sql/wagons_base_prd.sql \
   --table wagons \
-  --sqlite-db data/cache.db \
+  --sqlite-db "$MFDAPPS_RUNTIME_ROOT/cache.db" \
   --mode replace
 ```
 
@@ -107,7 +163,7 @@ python3 python/load_erp_wagons.py \
   --scheme datalake \
   --sql \"SELECT SERN FROM MILOIN WHERE EQTP = '100' AND STAT = '20'\" \
   --table RSRD_ERP_WAGONNO \
-  --sqlite-db data/cache.db
+  --sqlite-db "$MFDAPPS_RUNTIME_ROOT/cache.db"
 ```
 
 - Das Skript transformiert `SERN` automatisch in eine numerische Variante (alle Nicht-Ziffern entfernt) und speichert beide Formen.
@@ -122,7 +178,7 @@ Um rolling-stock-Stammdaten aus dem RSRD2-Portal nach SQLite zu holen:
 export RSRD_WSDL_URL="https://<host>/rsrd2?wsdl"
 export RSRD_SOAP_USER="..."
 export RSRD_SOAP_PASS="..."
-# optional: export RSRD_DB_PATH="data/cache.db"
+# optional: export RSRD_DB_PATH="$MFDAPPS_RUNTIME_ROOT/cache.db"
 
 python3 python/rsrd2_sync.py --wagons 338012345678901 338009876543210 --snapshots
 ```
@@ -142,11 +198,11 @@ Der typische Workflow sieht so aus:
 
 | Schritt | CLI | UI |
 | --- | --- | --- |
-| ERP-Wagennummern + Stammdaten laden | `python3 python/load_erp_wagons.py ...` + `python3 python/compass_to_sqlite.py --sql-file sql/rsrd_erp_full.sql --table RSRD_ERP_DATA ...` | Button **Aus ERP laden** (`/api/rsrd2/load_erp`) |
+| ERP-Wagennummern + Stammdaten laden | `python3 python/load_erp_wagons.py ...` + `python3 python/compass_to_sqlite.py --sql-file apps/AppRSRD/sql/rsrd_erp_full.sql --table RSRD_ERP_DATA ...` | Button **Aus ERP laden** (`/api/rsrd2/load_erp`) |
 | JSON aus RSRD laden | `python3 python/rsrd2_sync.py --mode stage --wagons ...` | Button **JSON aus RSRD laden** (`/api/rsrd2/fetch_json`) |
 | JSON verarbeiten | `python3 python/rsrd2_sync.py --mode process` | Button **JSON verarbeiten** (`/api/rsrd2/process_json`) |
 
-Alle relevanten Tabellen liegen im Standard-SQLite `data/cache.db`:
+Alle relevanten Tabellen liegen standardmäßig in `${MFDAPPS_RUNTIME_ROOT}/cache.db`:
 
 - `RSRD_ERP_WAGONNO` – reine Wagennummern (aus Compass/ERP PRD)  
 - `RSRD_ERP_DATA` – alle ERP-Felder gemäß Stored Procedure (inkl. neuer Spalten `WG-DATLETZG4.0`, `WG-DATLETZG4.2`, `WG-REVPERIODE`, `UPLOAD`, `TIME_UPLOAD`)  
@@ -162,7 +218,7 @@ Falls der RSRD-Anbieter andere Header-Informationen erwartet (z.B. Sendercode, M
   - `replace` (Default): Tabelle droppen und neu anlegen.
   - `truncate`: Tabelle behalten, Inhalte löschen, dann einfügen.
   - `append`: Nur anhängen.
-- Im Ordner `sql/` liegen Beispiele (`wagons_base_prd.sql`, `wagons_base_tst.sql`) mit dem oben gezeigten Select. Alternativ kann das Statement direkt via `--sql` angegeben werden.
+- SQL-Dateien liegen app-spezifisch, z. B. `apps/AppObjektstruktur/sql/` (`wagons_base_prd.sql`, `wagons_base_tst.sql`) oder `apps/AppRSRD/sql/rsrd_erp_full.sql`. Alternativ kann das Statement direkt via `--sql` angegeben werden.
 - Wenn du statt Data Lake auf Source Data Access zugreifen möchtest, setze `--scheme sourcedata --catalog <Katalog>`.
 
 ### FastAPI UI & Progress Loader

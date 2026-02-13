@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
-import os
 import sys
 import shutil
 import warnings
@@ -13,9 +13,17 @@ from urllib.parse import urlparse
 
 import jaydebeapi
 
+try:  # pragma: no cover - script vs package execution
+    from .env_loader import get_credentials_root, load_project_dotenv
+except ImportError:  # type: ignore
+    from env_loader import get_credentials_root, load_project_dotenv  # type: ignore
+
+load_project_dotenv()
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-IONAPI_DIR = PROJECT_ROOT / "credentials" / "ionapi"
-JDBC_DIR = PROJECT_ROOT / "credentials" / "jdbc"
+CREDENTIALS_ROOT = get_credentials_root()
+IONAPI_DIR = CREDENTIALS_ROOT / "ionapi"
+JDBC_DIR = CREDENTIALS_ROOT / "jdbc"
 
 PREFERRED_IONAPI = [
     "Infor Compass JDBC Driver.ionapi",
@@ -145,6 +153,27 @@ def _collect_support_jars(jdbc_path: Path) -> List[str]:
     return jars
 
 
+def _sanitize_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (dt.datetime, dt.date, dt.time)):
+        return value.isoformat()
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            return value.decode("utf-8")
+        except Exception:
+            return value.decode("utf-8", "ignore")
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        try:
+            return isoformat()
+        except Exception:
+            pass
+    return str(value)
+
+
 def run_query(jdbc_url: str, jdbc_path: Path, props: Dict[str, str], sql: str) -> Dict[str, Any]:
     warnings.filterwarnings(
         "ignore",
@@ -166,7 +195,13 @@ def run_query(jdbc_url: str, jdbc_path: Path, props: Dict[str, str], sql: str) -
             else []
         )
         rows = cursor.fetchall()
-        data = [dict(zip(columns, row)) for row in rows] if columns else rows
+        if columns:
+            data = []
+            for row in rows:
+                record = {col: _sanitize_value(val) for col, val in zip(columns, row)}
+                data.append(record)
+        else:
+            data = [[_sanitize_value(val) for val in row] for row in rows]
         return {"columns": columns, "rows": data}
     finally:
         conn.close()

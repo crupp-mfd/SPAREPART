@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GPT GoldenView</title>
+    <link rel="stylesheet" href="/ids-enterprise.css?v=1" />
+    <link rel="stylesheet" href="/styles.css?v=44" />
+  </head>
+  <body>
+    <header class="m3-header">
+      <div class="header-left">
+        <div>
+          <div class="app-title">MFD Automation</div>
+          <div class="app-subtitle">GPT GoldenView</div>
+        </div>
+      </div>
+    </header>
+    <main class="layout">
+      <section class="card" style="margin: 24px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <div>
+            <h2>GPT GoldenView</h2>
+            <p>
+              Übersicht der SQL-Abfragen, die als Excel exportiert und als Markdown beschrieben werden.
+              Die Dateien werden in das GitHub-Repo <code>M3ChatbotExcels</code> veröffentlicht.
+            </p>
+          </div>
+          <a id="gvNewBtn" class="ids-button primary gv-new-btn" href="#gvNewForm">Neuanlage</a>
+        </div>
+
+        <div id="gvGlobalStatus" style="margin-top: 12px; font-weight:700;"></div>
+
+        <div id="gvNewForm" class="card gv-new-form" style="margin-top: 16px; padding:16px;">
+          <label style="display:block; font-weight:700; margin-bottom:6px;">SQL Name</label>
+          <input id="gvNameInput" type="text" style="width:100%; margin-bottom:12px;" />
+          <input id="gvIdInput" type="hidden" />
+          <label style="display:block; font-weight:700; margin-bottom:6px;">SQL</label>
+          <textarea id="gvSqlInput" rows="6" style="width:100%; font-family:monospace;"></textarea>
+          <div style="margin-top:10px; display:flex; gap:8px;">
+            <button
+              id="gvParseBtn"
+              class="ids-button primary"
+              type="button"
+              onclick="document.getElementById('gvStatus').textContent='OK geklickt'; handleParse()"
+            >
+              OK
+            </button>
+            <button id="gvSaveBtn" class="ids-button" type="button">Speichern</button>
+            <button id="gvCancelBtn" class="ids-button tertiary" type="button">Abbrechen</button>
+          </div>
+          <div id="gvStatus" style="margin-top:12px; font-weight:700;"></div>
+          <div id="gvPreview" style="margin-top:16px;"></div>
+          <div id="gvDescWrap" style="margin-top:16px;"></div>
+        </div>
+
+        <div class="table-wrapper" style="margin-top: 16px;">
+          <div id="gvDashboard" style="display:flex; gap:16px; margin-bottom:10px; font-weight:700;"></div>
+          <table class="ids-data-table">
+            <thead>
+              <tr>
+                <th>SQL Name</th>
+                <th>Beschreibung</th>
+                <th>Excel</th>
+                <th>Markdown</th>
+                <th>Status</th>
+                <th>Aktionen</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>–</td>
+                <td>Noch keine Einträge.</td>
+                <td>–</td>
+                <td>–</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <div id="gvConnectModal" class="gv-modal" style="display:none;">
+      <div class="gv-modal-backdrop"></div>
+      <div class="gv-modal-card">
+        <div class="gv-modal-header">
+          <h3>Verbindungsfelder</h3>
+          <button id="gvConnectClose" class="ids-button tertiary" type="button">Schließen</button>
+        </div>
+        <div class="gv-modal-body">
+          <div id="gvConnectList"></div>
+          <div id="gvConnectDetail" style="margin-top:12px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/api-config.js?v=1"></script>
+    <script>
+      const newBtn = document.getElementById("gvNewBtn");
+      const form = document.getElementById("gvNewForm");
+      const nameInput = document.getElementById("gvNameInput");
+      const idInput = document.getElementById("gvIdInput");
+      const sqlInput = document.getElementById("gvSqlInput");
+      const parseBtn = document.getElementById("gvParseBtn");
+      const saveBtn = document.getElementById("gvSaveBtn");
+      const statusWrap = document.getElementById("gvStatus");
+      const globalStatusWrap = document.getElementById("gvGlobalStatus");
+      const cancelBtn = document.getElementById("gvCancelBtn");
+      const previewWrap = document.getElementById("gvPreview");
+      const descWrap = document.getElementById("gvDescWrap");
+      const connectModal = document.getElementById("gvConnectModal");
+      const connectClose = document.getElementById("gvConnectClose");
+      const connectList = document.getElementById("gvConnectList");
+      const connectDetail = document.getElementById("gvConnectDetail");
+
+      const stripTrailingSlash = (value) => String(value || "").replace(/\/+$/, "");
+      const runtimeApiConfig = window.__SPAREPART_API_CONFIG__ || {};
+      const goldenviewBaseUrl = stripTrailingSlash(runtimeApiConfig.GOLDENVIEW_API_BASE_URL || "");
+      const withGoldenview = (path) => {
+        const targetPath = String(path || "");
+        if (!targetPath.startsWith("/")) return targetPath;
+        return goldenviewBaseUrl ? `${goldenviewBaseUrl}${targetPath}` : targetPath;
+      };
+
+      let lastParsedFields = [];
+      let activeConnectTarget = "";
+
+      const resetForm = () => {
+        if (nameInput) nameInput.value = "";
+        if (idInput) idInput.value = "";
+        sqlInput.value = "";
+        previewWrap.innerHTML = "";
+        descWrap.innerHTML = "";
+        if (statusWrap) statusWrap.textContent = "";
+      };
+
+      const splitSelectList = (text) => {
+        const items = [];
+        let buf = "";
+        let depth = 0;
+        for (let i = 0; i < text.length; i++) {
+          const ch = text[i];
+          if (ch === "(") depth += 1;
+          if (ch === ")") depth = Math.max(0, depth - 1);
+          if (ch === "," && depth === 0) {
+            if (buf.trim()) items.push(buf.trim());
+            buf = "";
+            continue;
+          }
+          buf += ch;
+        }
+        if (buf.trim()) items.push(buf.trim());
+        return items;
+      };
+
+      const extractFieldName = (expr) => {
+        const asMatch = expr.match(/\s+AS\s+([A-Za-z0-9_\"\\.]+)/i);
+        if (asMatch) return asMatch[1].replace(/^\"|\"$/g, "");
+        const parts = expr.split(/\s+/);
+        if (parts.length > 1) {
+          const last = parts[parts.length - 1];
+          if (!/[(),]/.test(last)) return last.replace(/^\"|\"$/g, "");
+        }
+        const dot = expr.split(".").pop() || expr;
+        return dot.replace(/^\"|\"$/g, "");
+      };
+
+      const parseFieldsFromSql = (sql) => {
+        const cleaned = sql.replace(/--.*$/gm, " ");
+        const match = cleaned.match(/select([\s\S]*?)from/i);
+        if (!match) return [];
+        const list = match[1];
+        return splitSelectList(list).map(extractFieldName).filter(Boolean);
+      };
+
+      const renderPreview = (columns, rows) => {
+        previewWrap.innerHTML = "";
+        const title = document.createElement("div");
+        title.style.fontWeight = "700";
+        title.style.marginBottom = "6px";
+        title.textContent = "Vorschau (erste 5 Datensätze)";
+        previewWrap.appendChild(title);
+        const table = document.createElement("table");
+        table.className = "ids-data-table";
+        const thead = document.createElement("thead");
+        const trHead = document.createElement("tr");
+        columns.forEach((col) => {
+          const th = document.createElement("th");
+          th.textContent = col;
+          trHead.appendChild(th);
+        });
+        thead.appendChild(trHead);
+        table.appendChild(thead);
+        const tbody = document.createElement("tbody");
+        rows.slice(0, 5).forEach((row) => {
+          const tr = document.createElement("tr");
+          columns.forEach((col) => {
+            const td = document.createElement("td");
+            const value = row[col];
+            td.textContent = value === null || value === undefined ? "" : String(value);
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        const wrap = document.createElement("div");
+        wrap.className = "table-wrapper";
+        wrap.appendChild(table);
+        previewWrap.appendChild(wrap);
+      };
+
+      const runPreview = async (sql) => {
+        previewWrap.innerHTML = "Lade Vorschau ...";
+        let sqlPreview = sql.trim();
+        if (!/\blimit\b/i.test(sqlPreview) && !/\btop\s*\(/i.test(sqlPreview)) {
+          sqlPreview = sqlPreview.replace(/^\s*select\s+/i, "SELECT TOP(5) ");
+        }
+        try {
+          const resp = await fetch(withGoldenview("/query?format=kv"), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ sql: sqlPreview }),
+          });
+          if (!resp.ok) {
+            const text = await resp.text();
+            previewWrap.textContent = text || "Vorschau fehlgeschlagen.";
+            return { columns: [], rows: [] };
+          }
+          const data = await resp.json();
+          const columns = data.columns || [];
+          const rows = data.rows || [];
+          renderPreview(columns, rows);
+          return { columns, rows };
+        } catch (err) {
+          previewWrap.textContent = err.message || "Vorschau fehlgeschlagen.";
+          return { columns: [], rows: [] };
+        }
+      };
+
+      const renderDescriptions = (fields) => {
+        descWrap.innerHTML = "";
+        const general = document.createElement("div");
+        general.innerHTML = `
+          <label style="display:block; font-weight:700; margin-bottom:6px;">Allgemeine Beschreibung</label>
+          <textarea rows="3" style="width:100%;"></textarea>
+        `;
+        descWrap.appendChild(general);
+
+        fields.forEach((field) => {
+          const block = document.createElement("div");
+          block.className = "gv-field-row";
+          block.dataset.field = field;
+          block.innerHTML = `
+            <div class="gv-field-desc">
+              <label style="display:block; font-weight:700; margin-bottom:6px;">${field}</label>
+              <input type="text" style="width:100%;" data-field-input="${field}" />
+            </div>
+            <div class="gv-field-links">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <span style="font-weight:700;">Verbundene Felder</span>
+                <button class="ids-button tertiary gv-connect-btn" type="button" data-field="${field}">
+                  Verbindungsfelder
+                </button>
+              </div>
+              <div class="gv-field-links-list" data-links="${field}"></div>
+            </div>
+          `;
+          descWrap.appendChild(block);
+        });
+      };
+
+      if (newBtn) {
+        newBtn.addEventListener("click", () => {
+          form.style.display = "block";
+          sqlInput.focus();
+        });
+      }
+
+      if (cancelBtn) {
+        cancelBtn.addEventListener("click", () => {
+          form.style.display = "none";
+          resetForm();
+          if (location.hash === "#gvNewForm") {
+            history.replaceState(null, "", location.pathname + location.search);
+          }
+        });
+      }
+
+      const setStatus = (msg) => {
+        if (statusWrap) statusWrap.textContent = msg;
+        if (globalStatusWrap) globalStatusWrap.textContent = msg;
+      };
+
+      const handleParse = () => {
+        try {
+          setStatus("Verarbeite SQL ...");
+          const sql = sqlInput.value || "";
+          if (!sql.trim()) {
+            previewWrap.textContent = "Bitte SQL eingeben.";
+            setStatus("Bitte SQL eingeben.");
+            return;
+          }
+          const fields = parseFieldsFromSql(sql);
+          if (fields.length) {
+            lastParsedFields = fields;
+            renderDescriptions(fields);
+            setStatus(`Felder erkannt: ${fields.length}`);
+          } else {
+            descWrap.innerHTML = "<div>Felder werden geladen ...</div>";
+            setStatus("Keine SELECT-Felder erkannt, nutze Vorschau.");
+          }
+          runPreview(sql).then((preview) => {
+            if (!fields.length) {
+              const fallbackFields = preview.columns || [];
+              lastParsedFields = fallbackFields;
+              if (fallbackFields.length) {
+                renderDescriptions(fallbackFields);
+                setStatus(`Felder aus Vorschau: ${fallbackFields.length}`);
+              } else {
+                descWrap.innerHTML = "<div>Keine Felder gefunden. Bitte SELECT-Liste prüfen.</div>";
+                setStatus("Keine Felder gefunden.");
+              }
+            }
+          });
+          const connectButtons = descWrap.querySelectorAll(".gv-connect-btn");
+          connectButtons.forEach((btn) => {
+            btn.addEventListener("click", () => openConnectModal(btn.dataset.field || ""));
+          });
+        } catch (err) {
+          previewWrap.textContent = err.message || "Fehler beim Verarbeiten der SQL.";
+          setStatus("Fehler beim Verarbeiten der SQL.");
+        }
+      };
+
+      window.handleParse = handleParse;
+
+      if (parseBtn) {
+        parseBtn.addEventListener("click", handleParse);
+      }
+
+      const openConnectModal = (targetField) => {
+        if (!connectModal) return;
+        activeConnectTarget = targetField;
+        connectList.innerHTML = "";
+        connectDetail.innerHTML = "";
+
+        const sqlRows = Array.from(document.querySelectorAll(".ids-data-table tbody tr"));
+        const sqlEntries = sqlRows
+          .map((row) => {
+            const cells = row.querySelectorAll("td");
+            if (!cells.length) return null;
+            return {
+              name: cells[0]?.textContent?.trim() || "",
+              description: cells[1]?.textContent?.trim() || "",
+              sql: "",
+            };
+          })
+          .filter((item) => item && item.name && item.name !== "–");
+
+        if (!sqlEntries.length) {
+          const btn = document.createElement("button");
+          btn.className = "ids-button tertiary";
+          btn.type = "button";
+          btn.textContent = "Aktueller SQL";
+          btn.addEventListener("click", () => renderConnectDetail("Aktueller SQL"));
+          connectList.appendChild(btn);
+        } else {
+          sqlEntries.forEach((entry) => {
+            const btn = document.createElement("button");
+            btn.className = "ids-button tertiary";
+            btn.type = "button";
+            btn.textContent = entry.name;
+            btn.addEventListener("click", () => renderConnectDetail(entry.name));
+            connectList.appendChild(btn);
+          });
+        }
+
+        connectModal.style.display = "block";
+      };
+
+      const renderConnectDetail = (title) => {
+        const fields = lastParsedFields || [];
+        if (!fields.length) {
+          connectDetail.innerHTML = "<div>Keine Felder verfügbar.</div>";
+          return;
+        }
+        const list = fields
+          .map(
+            (field) =>
+              `<button class="ids-button tertiary gv-pick-field" type="button" data-field="${field}">${field}</button>`,
+          )
+          .join(" ");
+        connectDetail.innerHTML = `
+          <div style="font-weight:700; margin-bottom:6px;">${title}</div>
+          <div style="margin-bottom:8px;">Feld auswählen, um es zu verbinden.</div>
+          <div style="display:flex; flex-wrap:wrap; gap:6px;">${list}</div>
+        `;
+        const pickButtons = connectDetail.querySelectorAll(".gv-pick-field");
+        pickButtons.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const field = btn.dataset.field || "";
+            if (!field || !activeConnectTarget) return;
+            const listEl = descWrap.querySelector(`[data-links="${activeConnectTarget}"]`);
+            if (!listEl) return;
+            const tag = document.createElement("span");
+            tag.textContent = field;
+            listEl.appendChild(tag);
+            connectModal.style.display = "none";
+          });
+        });
+      };
+
+      if (connectClose) {
+        connectClose.addEventListener("click", () => {
+          connectModal.style.display = "none";
+        });
+      }
+
+      const collectFields = () => {
+        const rows = Array.from(descWrap.querySelectorAll(".gv-field-row"));
+        return rows.map((row) => {
+          const fieldName = row.dataset.field || "";
+          const input = row.querySelector("input[data-field-input]");
+          const linksWrap = row.querySelector(`[data-links="${fieldName}"]`);
+          const links = linksWrap
+            ? Array.from(linksWrap.querySelectorAll("span")).map((span) => span.textContent || "")
+            : [];
+          return {
+            name: fieldName,
+            description: input ? input.value : "",
+            connected_fields: links.filter((value) => value),
+          };
+        });
+      };
+
+      const loadOverview = async () => {
+        try {
+          const resp = await fetch(withGoldenview("/api/goldenview/list"), { credentials: "include" });
+          if (!resp.ok) {
+            const text = await resp.text();
+            setStatus(text || "Übersicht laden fehlgeschlagen.");
+            return;
+          }
+          const data = await resp.json();
+          const tbody = document.querySelector(".ids-data-table tbody");
+          if (!tbody) return;
+          tbody.innerHTML = "";
+          const items = data.items || [];
+          const repoRoot = data.repo_root || "";
+          const repoUrl = data.repo_url || "";
+
+          const toRepoLink = (path) => {
+            if (!repoUrl || !repoRoot || !path) return null;
+            if (!path.startsWith(repoRoot)) return null;
+            const rel = path.slice(repoRoot.length);
+            const relClean = rel.startsWith("/") ? rel.slice(1) : rel;
+            return `${repoUrl}/blob/main/${relClean}`;
+          };
+          if (!items.length) {
+            tbody.innerHTML = `
+              <tr>
+                <td>–</td>
+                <td>Noch keine Einträge.</td>
+                <td>–</td>
+                <td>–</td>
+              </tr>
+            `;
+            return;
+          }
+          let generatedCount = 0;
+          let commitPending = 0;
+
+          items.forEach((item) => {
+            if (item.generated_at) generatedCount += 1;
+            const gen = item.generated_at ? new Date(item.generated_at + "Z") : null;
+            const com = item.commit_at ? new Date(item.commit_at + "Z") : null;
+            if (gen && (!com || com < gen)) commitPending += 1;
+
+            const row = document.createElement("tr");
+            const excelRepo = toRepoLink(item.excel_path);
+            const mdRepo = toRepoLink(item.md_path);
+            const excelHref =
+              excelRepo ||
+              `${withGoldenview("/api/goldenview/file/download")}?path=${encodeURIComponent(item.excel_path || "")}`;
+            const mdHref =
+              mdRepo ||
+              `${withGoldenview("/api/goldenview/file/download")}?path=${encodeURIComponent(item.md_path || "")}`;
+            const excelLink = item.excel_path
+              ? `<a href="${excelHref}" target="_blank" rel="noreferrer">Excel</a>`
+              : "–";
+            const mdLink = item.md_path
+              ? `<a href="${mdHref}" target="_blank" rel="noreferrer">Markdown</a>`
+              : "–";
+            const dateLabel = item.generated_at ? new Date(item.generated_at + "Z").toLocaleString() : "";
+            const mdDateLabel = item.generated_at ? new Date(item.generated_at + "Z").toLocaleString() : "";
+            const commitDateLabel = item.commit_at ? new Date(item.commit_at + "Z").toLocaleString() : "";
+            const statusLabel = (() => {
+              if (!item.generated_at) return "Nicht erzeugt";
+              if (!item.commit_at) return "Commit ausstehend";
+              const gen = new Date(item.generated_at + "Z");
+              const com = new Date(item.commit_at + "Z");
+              return com >= gen ? "Commit ok" : "Commit ausstehend";
+            })();
+            row.innerHTML = `
+              <td><button class="ids-button tertiary" data-edit="${item.id}">${item.name || "SQL " + item.id}</button></td>
+              <td>${item.description || ""}</td>
+              <td>${excelLink}${dateLabel ? `<div style="color:#6b7280;font-size:0.85em;">${dateLabel}</div>` : ""}</td>
+              <td>${mdLink}${mdDateLabel ? `<div style="color:#6b7280;font-size:0.85em;">${mdDateLabel}</div>` : ""}</td>
+              <td>${statusLabel}${commitDateLabel ? `<div style="color:#6b7280;font-size:0.85em;">${commitDateLabel}</div>` : ""}</td>
+              <td>
+                <button class="ids-button gv-icon-btn" data-generate title="Neu erzeugen">
+                  <img src="/bilder/icon-regenerate.svg" alt="Neu erzeugen" />
+                </button>
+                <button class="ids-button gv-icon-btn" data-commit title="Commit">
+                  <img src="/bilder/icon-commit.svg" alt="Commit" />
+                </button>
+              </td>
+            `;
+            const editBtn = row.querySelector("[data-edit]");
+            if (editBtn) {
+              editBtn.addEventListener("click", async () => {
+                const id = editBtn.getAttribute("data-edit");
+                if (!id) return;
+                try {
+                  const resp = await fetch(withGoldenview(`/api/goldenview/detail/${id}`), { credentials: "include" });
+                  if (!resp.ok) return;
+                  const data = await resp.json();
+                  if (nameInput) nameInput.value = data.query?.name || "";
+                  if (idInput) idInput.value = data.query?.id || "";
+                  sqlInput.value = data.query?.sql_text || "";
+                  form.style.display = "block";
+                  const fields = data.fields || [];
+                  if (fields.length) {
+                    renderDescriptions(fields.map((f) => f.name));
+                    const general = descWrap.querySelector("textarea");
+                    if (general) general.value = data.query?.description || "";
+                    fields.forEach((field) => {
+                      const input = descWrap.querySelector(`[data-field-input="${field.name}"]`);
+                      if (input) input.value = field.description || "";
+                      const linksWrap = descWrap.querySelector(`[data-links="${field.name}"]`);
+                      if (linksWrap && field.connected_fields) {
+                        field.connected_fields.forEach((value) => {
+                          const tag = document.createElement("span");
+                          tag.textContent = value;
+                          linksWrap.appendChild(tag);
+                        });
+                      }
+                    });
+                  } else {
+                    renderDescriptions(parseFieldsFromSql(sqlInput.value));
+                    const general = descWrap.querySelector("textarea");
+                    if (general) general.value = data.query?.description || "";
+                  }
+                  setStatus("Lade Vorschau ...");
+                  runPreview(sqlInput.value);
+                } catch {
+                  // ignore
+                }
+              });
+            }
+            const genBtn = row.querySelector("[data-generate]");
+            if (genBtn) {
+              genBtn.addEventListener("click", async () => {
+                setStatus("Erzeugung läuft ...");
+                try {
+                  const genResp = await fetch(withGoldenview("/api/goldenview/generate"), {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: item.id }),
+                  });
+                  if (!genResp.ok) {
+                    const text = await genResp.text();
+                    setStatus(text || "Erzeugung fehlgeschlagen.");
+                    return;
+                  }
+                  const gen = await genResp.json();
+                  pollJob(gen.job_id);
+                } catch {
+                  setStatus("Erzeugung fehlgeschlagen.");
+                }
+              });
+            }
+
+            const commitBtn = row.querySelector("[data-commit]");
+            if (commitBtn) {
+              commitBtn.addEventListener("click", async () => {
+                setStatus("Commit läuft ...");
+                try {
+                  const resp = await fetch(withGoldenview("/api/goldenview/commit"), {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: "GoldenView update", id: item.id }),
+                  });
+                  if (!resp.ok) {
+                    const text = await resp.text();
+                    setStatus(text || "Commit fehlgeschlagen.");
+                    return;
+                  }
+                  setStatus("Commit abgeschlossen.");
+                  await loadOverview();
+                } catch (err) {
+                  setStatus("Commit fehlgeschlagen.");
+                }
+              });
+            }
+            tbody.appendChild(row);
+          });
+
+          const total = items.length;
+          const dashboard = document.getElementById("gvDashboard");
+          if (dashboard) {
+            dashboard.innerHTML = `
+              <div>Gesamt: ${total}</div>
+              <div>Erzeugt: ${generatedCount}</div>
+              <div>Commit ausstehend: ${commitPending}</div>
+              <div id="gvSyncStatus">Sync: ...</div>
+            `;
+          }
+        } catch (err) {
+          setStatus("Übersicht laden fehlgeschlagen.");
+        }
+      };
+
+      const loadSyncStatus = async () => {
+        try {
+          const resp = await fetch(withGoldenview("/api/goldenview/sync_status"), { credentials: "include" });
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const el = document.getElementById("gvSyncStatus");
+          if (!el) return;
+          if (data.status === "missing_token") {
+            el.textContent = "Sync: kein GitHub Token";
+            return;
+          }
+          if (data.status === "no_runs") {
+            el.textContent = "Sync: keine Runs";
+            return;
+          }
+          if (data.status === "error") {
+            el.textContent = "Sync: Fehler";
+            return;
+          }
+          const time = data.updated_at ? new Date(data.updated_at).toLocaleString() : "";
+          const conclusion = data.conclusion || data.status || "unbekannt";
+          el.innerHTML = `Sync: ${conclusion}${time ? ` (${time})` : ""}`;
+        } catch {
+          // ignore
+        }
+      };
+
+      const pollJob = (jobId) => {
+        const logBox = document.getElementById("gvStatus");
+        let timer = null;
+        const tick = async () => {
+          try {
+            const resp = await fetch(withGoldenview(`/api/goldenview/jobs/${jobId}`));
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const logs = data.logs || [];
+            if (logBox) {
+              logBox.innerHTML = logs.map((line) => `<div>${line}</div>`).join("");
+            }
+            if (data.status === "success") {
+              setStatus("Fertig.");
+              await loadOverview();
+              form.style.display = "none";
+              if (location.hash === "#gvNewForm") {
+                history.replaceState(null, "", location.pathname + location.search);
+              }
+              if (timer) clearInterval(timer);
+            }
+            if (data.status === "error") {
+              setStatus(data.error || "Fehler.");
+              if (timer) clearInterval(timer);
+            }
+          } catch {
+            // ignore
+          }
+        };
+        tick();
+        timer = setInterval(tick, 1500);
+      };
+
+      if (saveBtn) {
+        saveBtn.addEventListener("click", async () => {
+          const sql = sqlInput.value || "";
+          if (!sql.trim()) {
+            setStatus("Bitte SQL eingeben.");
+            return;
+          }
+          const generalDesc = descWrap.querySelector("textarea");
+          const payload = {
+            id: idInput ? idInput.value : "",
+            name: nameInput ? nameInput.value : "",
+            sql,
+            description: generalDesc ? generalDesc.value : "",
+            fields: collectFields(),
+          };
+          try {
+            const resp = await fetch(withGoldenview("/api/goldenview/save"), {
+              method: "POST",
+              credentials: "include",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(payload),
+            });
+            if (!resp.ok) {
+              const text = await resp.text();
+              setStatus(text || "Speichern fehlgeschlagen.");
+              return;
+            }
+            const saved = await resp.json();
+            if (idInput) idInput.value = saved.id;
+            setStatus("SQL gespeichert. Erzeuge Excel/Markdown ...");
+            const genResp = await fetch(withGoldenview("/api/goldenview/generate"), {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: saved.id }),
+            });
+            if (!genResp.ok) {
+              const text = await genResp.text();
+              setStatus(text || "Erzeugung fehlgeschlagen.");
+              return;
+            }
+            const gen = await genResp.json();
+            pollJob(gen.job_id);
+          } catch (err) {
+            setStatus("Speichern fehlgeschlagen.");
+          }
+        });
+      }
+
+      loadOverview();
+      loadSyncStatus();
+    </script>
+  </body>
+</html>

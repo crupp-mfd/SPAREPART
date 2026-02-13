@@ -1,0 +1,249 @@
+name: deploy-mfdapps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      appmfd: ${{ steps.filter.outputs.appmfd }}
+      bremsenumbau: ${{ steps.filter.outputs.bremsenumbau }}
+      goldenview: ${{ steps.filter.outputs.goldenview }}
+      mehrkilometer: ${{ steps.filter.outputs.mehrkilometer }}
+      objektstruktur: ${{ steps.filter.outputs.objektstruktur }}
+      rsrd: ${{ steps.filter.outputs.rsrd }}
+      sql_api: ${{ steps.filter.outputs.sql_api }}
+      teilenummer: ${{ steps.filter.outputs.teilenummer }}
+      wagensuche: ${{ steps.filter.outputs.wagensuche }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            appmfd:
+              - 'apps/AppMFD/**'
+              - '.env.template'
+              - 'deploy.sh'
+              - '.dockerignore'
+              - 'scripts/**'
+              - 'packages/sparepart-shared/**'
+              - 'python/**'
+            bremsenumbau:
+              - 'apps/AppBremsenumbau/**'
+              - '.dockerignore'
+              - 'scripts/**'
+              - 'packages/sparepart-shared/**'
+              - 'python/**'
+              - 'apps/AppBremsenumbau/sql/**'
+            goldenview:
+              - 'apps/AppGoldenView/**'
+              - '.dockerignore'
+              - 'scripts/**'
+              - 'packages/sparepart-shared/**'
+              - 'python/**'
+            mehrkilometer:
+              - 'apps/AppMehrkilometer/**'
+              - '.dockerignore'
+              - 'scripts/**'
+              - 'packages/sparepart-shared/**'
+              - 'python/**'
+            objektstruktur:
+              - 'apps/AppObjektstruktur/**'
+              - '.dockerignore'
+              - 'scripts/**'
+              - 'packages/sparepart-shared/**'
+              - 'python/**'
+              - 'apps/AppObjektstruktur/sql/**'
+            rsrd:
+              - 'apps/AppRSRD/**'
+              - '.dockerignore'
+              - 'scripts/**'
+              - 'packages/sparepart-shared/**'
+              - 'python/**'
+              - 'apps/AppRSRD/sql/**'
+            sql_api:
+              - 'apps/AppSQL-API/**'
+              - '.dockerignore'
+              - 'scripts/**'
+              - 'packages/sparepart-shared/**'
+              - 'python/**'
+            teilenummer:
+              - 'apps/AppTeilenummer/**'
+              - '.dockerignore'
+              - 'scripts/**'
+              - 'packages/sparepart-shared/**'
+              - 'python/**'
+              - 'apps/AppTeilenummer/sql/**'
+            wagensuche:
+              - 'apps/AppWagensuche/**'
+              - '.dockerignore'
+              - 'scripts/**'
+              - 'packages/sparepart-shared/**'
+              - 'python/**'
+              - 'apps/AppWagensuche/sql/**'
+
+  deploy-appmfd:
+    needs: changes
+    if: needs.changes.outputs.appmfd == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Deploy AppMFD
+        env:
+          APP_NAME: ${{ vars.APPMFD_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          IMAGE_REPO: ${{ vars.APPMFD_IMAGE_REPO }}
+        run: ./apps/AppMFD/deploy.sh
+
+  deploy-appbremsenumbau:
+    needs: changes
+    if: needs.changes.outputs.bremsenumbau == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Deploy AppBremsenumbau
+        env:
+          APP_NAME: ${{ vars.APPBREMSENUMBAU_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          IMAGE_REPO: ${{ vars.APPBREMSENUMBAU_IMAGE_REPO }}
+        run: ./apps/AppBremsenumbau/deploy.sh
+
+  deploy-appgoldenview:
+    needs: changes
+    if: needs.changes.outputs.goldenview == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Deploy AppGoldenView
+        env:
+          APP_NAME: ${{ vars.APPGOLDENVIEW_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          IMAGE_REPO: ${{ vars.APPGOLDENVIEW_IMAGE_REPO }}
+        run: ./apps/AppGoldenView/deploy.sh
+
+  deploy-appmehrkilometer:
+    needs: changes
+    if: needs.changes.outputs.mehrkilometer == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Deploy AppMehrkilometer
+        env:
+          APP_NAME: ${{ vars.APPMEHRKILOMETER_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          IMAGE_REPO: ${{ vars.APPMEHRKILOMETER_IMAGE_REPO }}
+        run: ./apps/AppMehrkilometer/deploy.sh
+
+  deploy-appobjektstruktur:
+    needs: changes
+    if: needs.changes.outputs.objektstruktur == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Deploy AppObjektstruktur
+        env:
+          APP_NAME: ${{ vars.APPOBJEKTSTRUKTUR_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          IMAGE_REPO: ${{ vars.APPOBJEKTSTRUKTUR_IMAGE_REPO }}
+        run: ./apps/AppObjektstruktur/deploy.sh
+
+  deploy-apprsrd:
+    needs: changes
+    if: needs.changes.outputs.rsrd == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Deploy AppRSRD
+        env:
+          APP_NAME: ${{ vars.APPRSRD_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          IMAGE_REPO: ${{ vars.APPRSRD_IMAGE_REPO }}
+        run: ./apps/AppRSRD/deploy.sh
+
+  deploy-appsql-api:
+    needs: changes
+    if: needs.changes.outputs.sql_api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Deploy AppSQL-API
+        env:
+          APP_NAME: ${{ vars.APPSQLAPI_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          IMAGE_REPO: ${{ vars.APPSQLAPI_IMAGE_REPO }}
+        run: ./apps/AppSQL-API/deploy.sh
+
+  deploy-appteilenummer:
+    needs: changes
+    if: needs.changes.outputs.teilenummer == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Deploy AppTeilenummer
+        env:
+          APP_NAME: ${{ vars.APPTEILENUMMER_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          IMAGE_REPO: ${{ vars.APPTEILENUMMER_IMAGE_REPO }}
+        run: ./apps/AppTeilenummer/deploy.sh
+
+  deploy-appwagensuche:
+    needs: changes
+    if: needs.changes.outputs.wagensuche == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Deploy AppWagensuche
+        env:
+          APP_NAME: ${{ vars.APPWAGENSUCHE_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          IMAGE_REPO: ${{ vars.APPWAGENSUCHE_IMAGE_REPO }}
+        run: ./apps/AppWagensuche/deploy.sh

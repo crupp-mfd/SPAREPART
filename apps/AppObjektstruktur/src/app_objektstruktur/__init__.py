@@ -1,0 +1,1 @@
+"""MFDApps AppObjektstruktur package."""

@@ -12,4 +12,8 @@ dist/
 build/
 coverage/
 credentials/
+apps/AppMFD/credentials/
 data/
+apps/*/runtime/
+apps/*/legacy_source/Output/
+apps/*/legacy_source/Quellen/

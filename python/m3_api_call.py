@@ -16,8 +16,15 @@ from typing import Dict, Optional
 
 import requests
 
+try:  # pragma: no cover - script vs package execution
+    from .env_loader import get_credentials_root, load_project_dotenv
+except ImportError:  # type: ignore
+    from env_loader import get_credentials_root, load_project_dotenv  # type: ignore
+
+load_project_dotenv()
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_IONAPI_DIR = PROJECT_ROOT / "credentials" / "ionapi"
+DEFAULT_IONAPI_DIR = get_credentials_root() / "ionapi"
 DEFAULT_IONAPI_PATH = DEFAULT_IONAPI_DIR / "service_account.ionapi"
 PREFERRED_IONAPI_FILES = [
     "Infor Compass JDBC Driver.ionapi",

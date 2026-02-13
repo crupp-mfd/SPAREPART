@@ -6,22 +6,60 @@ import time
 from xml.sax.saxutils import escape as xml_escape
 import sqlite3
 import subprocess
+import shutil
 import sys
 import json
 import re
 from urllib.parse import urlsplit, urlunsplit, urlencode
 from pathlib import Path
-from typing import List, Dict, Any, Mapping
+from typing import List, Dict, Any, Mapping, Optional, Tuple
 import threading
 import uuid
 
-from datetime import datetime
+from datetime import datetime, date
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Body, Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Body, Response, Request
+import logging
+from fastapi.responses import PlainTextResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+import psycopg
+import httpx
+from openai import OpenAI
+from openpyxl import Workbook
 
-from .env_loader import load_project_dotenv
+try:
+    from sparepart_shared.auth import is_basic_auth_valid
+    from sparepart_shared.db import create_sqlite_connection
+except Exception:
+    import base64
+
+    def is_basic_auth_valid(auth_header: str, expected_user: str, expected_pass: str) -> bool:
+        if not expected_user or not expected_pass:
+            return False
+        if not auth_header.startswith("Basic "):
+            return False
+        encoded = auth_header.split(" ", 1)[1].strip()
+        try:
+            decoded = base64.b64decode(encoded).decode("utf-8")
+        except Exception:
+            return False
+        if ":" not in decoded:
+            return False
+        user, password = decoded.split(":", 1)
+        return user == expected_user and password == expected_pass
+
+    def create_sqlite_connection(path: Path | str) -> sqlite3.Connection:
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+from .env_loader import (
+    get_credentials_root,
+    get_frontend_root,
+    get_runtime_root,
+    load_project_dotenv,
+)
 from .rsrd2_sync import (
     RSRDTables,
     BASE_DETAIL_TABLE,
@@ -29,6 +67,7 @@ from .rsrd2_sync import (
     BASE_SNAPSHOTS_TABLE,
     BASE_WAGONS_TABLE,
     init_db as rsrd_init_db,
+    resolve_env_value as rsrd_resolve_env_value,
     sync_wagons as rsrd_sync_wagons,
     tables_for_env as rsrd_tables_for_env,
 )
@@ -46,13 +85,33 @@ from .m3_api_call import (
 )
 
 load_project_dotenv()
+logging.basicConfig(level=logging.INFO)
+_auth_logger = logging.getLogger("auth")
+
+_msy_text_cache: Dict[str, str] = {}
+_wg_tsi_txid_cache: Dict[str, str] = {}
+_wg_tsi_text_cache: Dict[str, str] = {}
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DB_PATH = PROJECT_ROOT / "data" / "cache.db"
-API_LOG_PATH = PROJECT_ROOT / "data" / "API.log"
-FRONTEND_DIR = PROJECT_ROOT / "frontend"
-IONAPI_DIR = PROJECT_ROOT / "credentials" / "ionapi"
-TST_ENV_DIR = PROJECT_ROOT / "credentials" / "TSTEnv"
+RUNTIME_ROOT = get_runtime_root()
+CREDENTIALS_ROOT = get_credentials_root()
+FRONTEND_DIR = get_frontend_root()
+
+
+def _resolve_runtime_path(value: str | None, default_name: str) -> Path:
+    raw = (value or "").strip()
+    if not raw:
+        return RUNTIME_ROOT / default_name
+    candidate = Path(raw).expanduser()
+    if candidate.is_absolute():
+        return candidate
+    return RUNTIME_ROOT / candidate
+
+
+DB_PATH = _resolve_runtime_path(os.getenv("SQLITE_PATH"), "cache.db")
+API_LOG_PATH = _resolve_runtime_path(os.getenv("API_LOG_PATH"), "API.log")
+IONAPI_DIR = CREDENTIALS_ROOT / "ionapi"
+TST_ENV_DIR = CREDENTIALS_ROOT / "TSTEnv"
 TST_COMPASS_IONAPI = TST_ENV_DIR / "Infor Compass JDBC Driver.ionapi"
 TST_COMPASS_JDBC = TST_ENV_DIR / "infor-compass-jdbc-2020-09.jar"
 DEFAULT_TABLE = "wagons"
@@ -90,7 +149,10 @@ RENUMBER_EXTRA_COLUMNS = [
 RSRD_ERP_TABLE = "RSRD_ERP_WAGONNO"
 RSRD_ERP_FULL_TABLE = "RSRD_ERP_DATA"
 RSRD_UPLOAD_TABLE = "RSRD_WAGON_UPLOAD"
+RSRD_SYNC_TABLE = "RSRD_SYNC_WAGONS"
+RSRD_SYNC_SELECTION_TABLE = "RSRD_SYNC_SELECTIONS"
 TEILENUMMER_TABLE = "TEILENUMMER"
+WAGENSUCHE_TABLE = "WAGENSUCHE"
 TEILENUMMER_TAUSCH_TABLE = "TEILENUMMER_TAUSCH"
 TEILENUMMER_TAUSCH_EXTRA_COLUMNS = [
     "NITNO",
@@ -107,16 +169,70 @@ TEILENUMMER_TAUSCH_EXTRA_COLUMNS = [
     "MOS050_STATUS",
     "IN_STATUS",
 ]
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+API_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 DEFAULT_SCHEME = os.getenv("SPAREPART_SCHEME", "datalake")
-SQL_FILE = PROJECT_ROOT / "sql" / "wagons_base.sql"
-WAGONS_SQL_FILES = {
-    "prd": PROJECT_ROOT / "sql" / "wagons_base_prd.sql",
-    "tst": PROJECT_ROOT / "sql" / "wagons_base_tst.sql",
+DEFAULT_CATALOG = os.getenv("SPAREPART_CATALOG")
+DEFAULT_COLLECTION = os.getenv("SPAREPART_DEFAULT_COLLECTION")
+MFDAPPS_SERVICE = os.getenv("MFDAPPS_SERVICE", "").strip().lower()
+SERVICE_APP_DIRS: Dict[str, str] = {
+    "appmfd": "AppMFD",
+    "objektstruktur": "AppObjektstruktur",
+    "bremsenumbau": "AppBremsenumbau",
+    "goldenview": "AppGoldenView",
+    "mehrkilometer": "AppMehrkilometer",
+    "rsrd": "AppRSRD",
+    "sql_api": "AppSQL-API",
+    "teilenummer": "AppTeilenummer",
+    "wagensuche": "AppWagensuche",
 }
-SPAREPARTS_SQL_FILE = PROJECT_ROOT / "sql" / "spareparts_base.sql"
-RSRD_ERP_SQL_FILE = PROJECT_ROOT / "sql" / "rsrd_erp_full.sql"
-TEILENUMMER_SQL_FILE = PROJECT_ROOT / "sql" / "teilenummer_base.sql"
+
+
+def _resolve_sql_file(filename: str, owners: Tuple[str, ...]) -> Path:
+    roots: List[Path] = []
+    active_app = SERVICE_APP_DIRS.get(MFDAPPS_SERVICE)
+    if active_app:
+        roots.append(PROJECT_ROOT / "apps" / active_app / "sql")
+    roots.extend(PROJECT_ROOT / "apps" / owner / "sql" for owner in owners)
+    roots.append(PROJECT_ROOT / "sql")  # Legacy fallback.
+
+    seen: set[Path] = set()
+    ordered_roots: List[Path] = []
+    for root in roots:
+        if root in seen:
+            continue
+        seen.add(root)
+        ordered_roots.append(root)
+
+    for root in ordered_roots:
+        candidate = root / filename
+        if candidate.exists():
+            return candidate
+
+    if owners:
+        return PROJECT_ROOT / "apps" / owners[0] / "sql" / filename
+    return PROJECT_ROOT / "sql" / filename
+
+
+SQL_FILE = _resolve_sql_file("wagons_base.sql", ("AppObjektstruktur", "AppBremsenumbau"))
+WAGONS_SQL_FILES = {
+    "prd": _resolve_sql_file("wagons_base_prd.sql", ("AppObjektstruktur", "AppBremsenumbau")),
+    "tst": _resolve_sql_file("wagons_base_tst.sql", ("AppObjektstruktur", "AppBremsenumbau")),
+}
+WAGENSUCHE_SQL_FILES = {
+    "prd": _resolve_sql_file("wagensuche_prd.sql", ("AppWagensuche",)),
+    "tst": _resolve_sql_file("wagensuche_tst.sql", ("AppWagensuche",)),
+}
+SPAREPARTS_SQL_FILE = _resolve_sql_file("spareparts_base.sql", ("AppObjektstruktur",))
+RSRD_ERP_SQL_FILE = _resolve_sql_file("rsrd_erp_full.sql", ("AppRSRD",))
+TEILENUMMER_SQL_FILE = _resolve_sql_file("teilenummer_base.sql", ("AppTeilenummer",))
 DEFAULT_ENV = os.getenv("SPAREPART_ENV", "prd").lower()
+WAGENSUCHE_PG_URL = os.getenv("WAGENSUCHE_PG_URL", "").strip()
+WAGENSUCHE_PG_HOST = os.getenv("WAGENSUCHE_PG_HOST", "").strip()
+WAGENSUCHE_PG_PORT = os.getenv("WAGENSUCHE_PG_PORT", "").strip()
+WAGENSUCHE_PG_DB = os.getenv("WAGENSUCHE_PG_DB", "").strip()
+WAGENSUCHE_PG_USER = os.getenv("WAGENSUCHE_PG_USER", "").strip()
+WAGENSUCHE_PG_PASS = os.getenv("WAGENSUCHE_PG_PASS", "").strip()
 ENV_ALIASES = {
     "live": "prd",
     "prod": "prd",
@@ -182,6 +298,95 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+BASIC_AUTH_USER = os.getenv("BASIC_AUTH_USER", "").strip()
+BASIC_AUTH_PASS = os.getenv("BASIC_AUTH_PASS", "").strip()
+BASIC_AUTH_ENABLED = bool(BASIC_AUTH_USER and BASIC_AUTH_PASS)
+M3BRIDGE_API_KEY = os.getenv("M3BRIDGE_API_KEY", "").strip()
+
+GOLDENVIEW_QUERIES_TABLE = "GOLDENVIEW_QUERIES"
+GOLDENVIEW_FIELDS_TABLE = "GOLDENVIEW_FIELDS"
+GOLDENVIEW_EXPORT_DIR = _resolve_runtime_path(
+    os.getenv("GOLDENVIEW_REPO_PATH"),
+    "goldenview_exports",
+)
+GITHUB_SYNC_REPO = os.getenv("GITHUB_SYNC_REPO", "crupp-mfd/M3ChatbotExcels").strip()
+GITHUB_SYNC_TOKEN = os.getenv("GITHUB_SYNC_TOKEN", "").strip()
+GITHUB_SYNC_WORKFLOW = os.getenv("GITHUB_SYNC_WORKFLOW", "sync-knowledge.yml").strip()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_VECTOR_STORE_ID = os.getenv("OPENAI_VECTOR_STORE_ID", "").strip()
+GPT_ACTION_API_KEY = os.getenv("GPT_ACTION_API_KEY", "").strip()
+
+
+def _basic_auth_valid(auth_header: str) -> bool:
+    if not BASIC_AUTH_ENABLED:
+        return True
+    return is_basic_auth_valid(auth_header, BASIC_AUTH_USER, BASIC_AUTH_PASS)
+
+
+class AuthStaticFiles(StaticFiles):
+    async def __call__(self, scope, receive, send) -> None:  # type: ignore[override]
+        if scope.get("type") != "http":
+            return await super().__call__(scope, receive, send)
+        headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+        auth_header = headers.get("authorization", "")
+        if not _basic_auth_valid(auth_header):
+            resp = Response(status_code=401, headers={"WWW-Authenticate": "Basic"})
+            await resp(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
+
+
+@app.middleware("http")
+async def _auth_middleware(request: Request, call_next):
+    path = request.url.path
+    raw_path = ""
+    try:
+        raw_path = request.scope.get("raw_path", b"").decode("utf-8", "ignore")
+    except Exception:
+        raw_path = ""
+    if "ask_m3_knowledge" in path or "ask_m3_knowledge" in raw_path:
+        _auth_logger.info(
+            "auth_debug path=%s raw_path=%s has_api_key=%s method=%s",
+            path,
+            raw_path,
+            bool(request.headers.get("x-api-key")),
+            request.method,
+        )
+    if path.startswith("/query") or "/api/ask_m3_knowledge" in path or "ask_m3_knowledge" in raw_path:
+        api_key = request.headers.get("x-api-key", "").strip()
+        expected = M3BRIDGE_API_KEY if path.startswith("/query") else GPT_ACTION_API_KEY
+        if "ask_m3_knowledge" in path or "ask_m3_knowledge" in raw_path:
+            _auth_logger.info(
+                "auth_debug expected_set=%s expected_len=%s",
+                bool(expected),
+                len(expected) if expected else 0,
+            )
+            import hashlib
+
+            def _h(val: str) -> str:
+                return hashlib.sha256(val.encode("utf-8")).hexdigest()[:8] if val else "empty"
+
+            _auth_logger.info(
+                "auth_debug api_len=%s api_hash=%s expected_hash=%s",
+                len(api_key),
+                _h(api_key),
+                _h(expected),
+            )
+        auth_header = request.headers.get("authorization", "")
+        if expected and api_key == expected:
+            return await call_next(request)
+        if _basic_auth_valid(auth_header):
+            return await call_next(request)
+        if expected:
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        return Response(status_code=401, headers={"WWW-Authenticate": "Basic"})
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    auth_header = request.headers.get("authorization", "")
+    if not _basic_auth_valid(auth_header):
+        return Response(status_code=401, headers={"WWW-Authenticate": "Basic"})
+    return await call_next(request)
+
 
 @app.on_event("startup")
 def _prepare_env_tables() -> None:
@@ -189,15 +394,49 @@ def _prepare_env_tables() -> None:
         return
     with _connect() as conn:
         _ensure_env_tables(conn)
+        _init_goldenview_db(conn)
         conn.commit()
+
+
+def _init_goldenview_db(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {GOLDENVIEW_QUERIES_TABLE} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            sql_text TEXT NOT NULL,
+            description TEXT,
+            excel_path TEXT,
+            md_path TEXT,
+            generated_at TEXT,
+            commit_at TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {GOLDENVIEW_FIELDS_TABLE} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_id INTEGER NOT NULL,
+            field_name TEXT NOT NULL,
+            field_description TEXT,
+            connected_fields TEXT,
+            FOREIGN KEY(query_id) REFERENCES {GOLDENVIEW_QUERIES_TABLE}(id) ON DELETE CASCADE
+        )
+        """
+    )
+
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({GOLDENVIEW_QUERIES_TABLE})").fetchall()}
+    for column in ("excel_path", "md_path", "generated_at", "commit_at"):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {GOLDENVIEW_QUERIES_TABLE} ADD COLUMN {column} TEXT")
 
 
 def _connect() -> sqlite3.Connection:
     if not DB_PATH.exists():
         raise HTTPException(status_code=500, detail=f"SQLite DB nicht gefunden: {DB_PATH}")
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return create_sqlite_connection(DB_PATH)
 
 
 def _ensure_swap_table(conn: sqlite3.Connection, table_name: str) -> None:
@@ -231,6 +470,10 @@ def _normalize_env(env: str | None) -> str:
     if not normalized:
         raise HTTPException(status_code=400, detail="Ungültige Umgebung.")
     return normalized
+
+
+def _normalize_rsrd_env(rsrd_env: str | None, env: str | None) -> str:
+    return _normalize_env(rsrd_env or env)
 
 
 def _effective_dry_run(env: str | None) -> bool:
@@ -294,6 +537,154 @@ def _resolve_rsrd_wsdl(env: str | None) -> str:
     return _sanitize_url(value)
 
 
+def _resolve_rsrd_upload_url(env: str | None) -> str:
+    wsdl = _resolve_rsrd_wsdl(env)
+    if not wsdl:
+        return ""
+    if wsdl.lower().endswith("?wsdl"):
+        return wsdl[: -len("?wsdl")]
+    return wsdl
+
+
+def _rsrd_upload_credentials(env: str | None) -> tuple[str, str]:
+    user = rsrd_resolve_env_value("RSRD_SOAP_USER", env)
+    password = rsrd_resolve_env_value("RSRD_SOAP_PASS", env)
+    return user, password
+
+
+def _rsrd_xml_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+        return str(value)
+    return str(value)
+
+
+def _rsrd_payload_to_xml(tag: str, value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return "".join(_rsrd_payload_to_xml(tag, item) for item in value if item is not None)
+    if isinstance(value, dict):
+        order_map = {
+            "DesignDataSet": [
+                "LetterMarking",
+                "CombinedTransportWagonType",
+                "TankCode",
+                "WagonNumberOfAxles",
+                "WheelSetType",
+                "WheelDiameter",
+                "WheelsetGauge",
+                "WheelSetTransformationMethod",
+                "NumberOfBogies",
+                "BogiePitch",
+                "BogiePivotPitch",
+                "InnerWheelbase",
+                "CouplingType",
+                "BufferType",
+                "NormalLoadingGauge",
+                "MinCurveRadius",
+                "MinVerticalRadiusYardHump",
+                "WagonWeightEmpty",
+                "LengthOverBuffers",
+                "MaxAxleWeight",
+                "LoadTable",
+                "MaxDesignSpeed",
+                "AirBrake",
+                "HandBrake",
+                "DerailmentDetectionDevice",
+                "BrakeBlock",
+                "MaxLengthOfLoad",
+                "LoadArea",
+                "HeightOfLoadingPlaneUnladen",
+                "RemovableAccessories",
+                "LoadingCapacity",
+                "MaxGrossWeight",
+                "VapourReturnSystem",
+                "FerryPermittedFlag",
+                "FerryRampAngle",
+                "TemperatureRange",
+                "TechnicalForwardingRestrictions",
+                "MaintenancePlanRef",
+                "DateLastOverhaul",
+                "PlannedDateNextOverhaul",
+                "OverhaulValidityPeriod",
+                "PermittedTolerance",
+                "DateOfNextTankInspection",
+            ],
+            "HandBrake": ["HandBrakeType", "HandBrakedWeight", "ParkingBrakeForce"],
+            "AirBrake": [
+                "NumberOfBrakes",
+                "BrakeSystem",
+                "AirBrakeType",
+                "BrakingPowerVariationDevice",
+                "AirBrakedMass",
+                "LoadChangeDevice",
+                "BrakeSpecialCharacteristics",
+            ],
+            "BrakeBlock": [
+                "BrakeBlockName",
+                "CompositeBrakeBlockRetrofitted",
+                "CompositeBrakeBlockInstallationDate",
+            ],
+            "LoadTable": [
+                "LoadTableProduct",
+                "LoadTableCountry",
+                "SpeedCategory",
+                "LoadTableStars",
+                "RouteClassPayloads",
+            ],
+        }
+        order = order_map.get(tag)
+        if order:
+            seen = set()
+            parts = []
+            for key in order:
+                if key in value and value[key] is not None:
+                    parts.append(_rsrd_payload_to_xml(key, value[key]))
+                    seen.add(key)
+            for key, inner_value in value.items():
+                if key in seen or inner_value is None:
+                    continue
+                parts.append(_rsrd_payload_to_xml(key, inner_value))
+            inner = "".join(parts)
+        else:
+            inner = "".join(
+                _rsrd_payload_to_xml(key, inner_value)
+                for key, inner_value in value.items()
+                if inner_value is not None
+            )
+        if not inner:
+            return ""
+        return f"<xsd:{tag}>{inner}</xsd:{tag}>"
+    safe = xml_escape(_rsrd_xml_value(value))
+    return f"<xsd:{tag}>{safe}</xsd:{tag}>"
+
+
+def _rsrd_build_upload_xml(payload: Dict[str, Any]) -> str:
+    dataset = "".join(
+        _rsrd_payload_to_xml(key, value) for key, value in payload.items() if value is not None
+    )
+    return (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+        "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" "
+        "xmlns:xsd=\"http://www.rsrd.com/xsd\">"
+        "<soapenv:Header/>"
+        "<soapenv:Body>"
+        "<xsd:UploadWagonDataRequest>"
+        "<xsd:RollingStockDataset>"
+        f"{dataset}"
+        "</xsd:RollingStockDataset>"
+        "</xsd:UploadWagonDataRequest>"
+        "</soapenv:Body>"
+        "</soapenv:Envelope>"
+    )
+
+
 def _rsrd_tables(env: str | None) -> RSRDTables:
     return rsrd_tables_for_env(_normalize_env(env))
 
@@ -322,6 +713,50 @@ def _ensure_rsrd_upload_table(conn: sqlite3.Connection, env: str | None) -> str:
     return table_name
 
 
+def _ensure_rsrd_sync_table(conn: sqlite3.Connection, env: str | None) -> str:
+    table_name = _table_for(RSRD_SYNC_TABLE, env)
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {table_name} (
+            wagon_number_freight TEXT PRIMARY KEY,
+            enabled TEXT,
+            sync_data_env TEXT,
+            sync_km_env TEXT,
+            sync_docs_env TEXT,
+            updated_at TEXT
+        )
+        """
+    )
+    existing = {row[1].lower() for row in conn.execute(f"PRAGMA table_info({table_name})")}
+    for column in ("sync_data_env", "sync_km_env", "sync_docs_env"):
+        if column in existing:
+            continue
+        conn.execute(f'ALTER TABLE {table_name} ADD COLUMN "{column}" TEXT')
+    return table_name
+
+
+def _ensure_rsrd_sync_selection_table(conn: sqlite3.Connection, env: str | None) -> str:
+    table_name = _table_for(RSRD_SYNC_SELECTION_TABLE, env)
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {table_name} (
+            wagon_number_freight TEXT PRIMARY KEY,
+            sync_data_env TEXT,
+            sync_km_env TEXT,
+            sync_docs_env TEXT,
+            one_time_transfer TEXT,
+            updated_at TEXT
+        )
+        """
+    )
+    existing = {row[1].lower() for row in conn.execute(f"PRAGMA table_info({table_name})")}
+    for column in ("sync_data_env", "sync_km_env", "sync_docs_env", "one_time_transfer"):
+        if column in existing:
+            continue
+        conn.execute(f'ALTER TABLE {table_name} ADD COLUMN "{column}" TEXT')
+    return table_name
+
+
 def _fetch_erp_wagon_numbers(
     conn: sqlite3.Connection,
     env: str | None,
@@ -345,6 +780,22 @@ def _fetch_erp_wagon_numbers(
         if number:
             wagon_numbers.append(number)
     return wagon_numbers
+
+
+def _like_pattern(value: str) -> str:
+    raw = value.strip()
+    if not raw:
+        return "%"
+    escaped = raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    if "*" in escaped:
+        return escaped.replace("*", "%")
+    return f"%{escaped}%"
+
+
+def _sern_filter_pattern(value: str) -> str:
+    raw = value.strip()
+    filtered = "".join(ch for ch in raw if ch.isdigit() or ch == "*")
+    return _like_pattern(filtered or raw)
 
 
 def _ensure_table(
@@ -419,6 +870,90 @@ def _wagons_sql_file(env: str | None) -> Path:
     if SQL_FILE.exists():
         return SQL_FILE
     return preferred or SQL_FILE
+
+
+def _wagensuche_sql_file(env: str | None) -> Path:
+    normalized = _normalize_env(env)
+    preferred = WAGENSUCHE_SQL_FILES.get(normalized)
+    if preferred and preferred.exists():
+        return preferred
+    fallback = WAGENSUCHE_SQL_FILES.get("prd")
+    return preferred or fallback or SQL_FILE
+
+
+def _wagensuche_pg_dsn() -> Optional[str]:
+    if WAGENSUCHE_PG_URL:
+        return WAGENSUCHE_PG_URL
+    if not (WAGENSUCHE_PG_HOST and WAGENSUCHE_PG_DB and WAGENSUCHE_PG_USER):
+        return None
+    port = WAGENSUCHE_PG_PORT or "5432"
+    password = WAGENSUCHE_PG_PASS
+    return (
+        f"postgresql://{WAGENSUCHE_PG_USER}:{password}"
+        f"@{WAGENSUCHE_PG_HOST}:{port}/{WAGENSUCHE_PG_DB}"
+    )
+
+
+def _normalize_sern_variants(sern: str) -> List[str]:
+    raw = sern.strip()
+    digits = re.sub(r"\D", "", raw)
+    variants = []
+    if raw:
+        variants.append(raw)
+    if digits and digits != raw:
+        variants.append(digits)
+    # Deduplicate while preserving order
+    seen = set()
+    unique: List[str] = []
+    for item in variants:
+        if item not in seen:
+            unique.append(item)
+            seen.add(item)
+    return unique
+
+
+def _wagensuche_latest_position(sern: str) -> Optional[Dict[str, Any]]:
+    dsn = _wagensuche_pg_dsn()
+    if not dsn:
+        raise HTTPException(
+            status_code=500,
+            detail="Postgres-Konfiguration fehlt. Bitte WAGENSUCHE_PG_* setzen.",
+        )
+    variants = _normalize_sern_variants(sern)
+    if not variants:
+        return None
+    placeholders = ", ".join(["%s"] * len(variants))
+    query = f"""
+        SELECT
+            "ITSS_TransportDeviceID",
+            "GNSS_UTCtimestamp",
+            "GNSS_Longitude",
+            "GNSS_Latitude",
+            mileage
+        FROM streaming.notification
+        WHERE "ITSS_TransportDeviceID" IN ({placeholders})
+          AND mileage > 0
+          AND "GNSS_Longitude" IS NOT NULL
+          AND "GNSS_Latitude" IS NOT NULL
+        ORDER BY "GNSS_UTCtimestamp" DESC
+        LIMIT 1
+    """
+    try:
+        with psycopg.connect(dsn, connect_timeout=5, options="-c statement_timeout=10000") as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, tuple(variants))
+                row = cur.fetchone()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Postgres-Query fehlgeschlagen: {exc}") from exc
+    if not row:
+        return None
+    return {
+        "sern": row[0],
+        "timestamp": row[1],
+        "longitude": row[2],
+        "latitude": row[3],
+        "mileage": row[4],
+    }
 
 
 def _create_table_from_columns(conn: sqlite3.Connection, table: str, columns: List[str]) -> None:
@@ -551,13 +1086,17 @@ def _ensure_renumber_schema(conn: sqlite3.Connection, table_name: str) -> None:
 
 def _ensure_env_tables(conn: sqlite3.Connection) -> None:
     wagons_columns = _columns_from_sql_file(_wagons_sql_file("prd"))
+    wagensuche_columns = _columns_from_sql_file(_wagensuche_sql_file("prd"))
     spareparts_columns = _columns_from_sql_file(SPAREPARTS_SQL_FILE)
     rsrd_full_columns = _columns_from_sql_file(RSRD_ERP_SQL_FILE)
 
     _ensure_env_table_pair(conn, DEFAULT_TABLE, columns_hint=wagons_columns, enforce_order=True)
     _ensure_env_table_pair(conn, WAGENUMBAU_TABLE, columns_hint=wagons_columns, enforce_order=True)
+    _ensure_env_table_pair(conn, WAGENSUCHE_TABLE, columns_hint=wagensuche_columns, enforce_order=True)
     _ensure_env_table_pair(conn, SPAREPARTS_TABLE, columns_hint=spareparts_columns, enforce_order=True)
     _ensure_env_table_pair(conn, RSRD_ERP_FULL_TABLE, columns_hint=rsrd_full_columns, enforce_order=True)
+    _ensure_rsrd_sync_table(conn, "prd")
+    _ensure_rsrd_sync_table(conn, "tst")
     _ensure_env_table_pair(
         conn,
         RSRD_ERP_TABLE,
@@ -1478,6 +2017,7 @@ def meta_targets(env: str = Query(DEFAULT_ENV)) -> dict:
             "spareparts": _table_for(SPAREPARTS_TABLE, env),
             "sparepart_swaps": _table_for(SPAREPARTS_SWAP_TABLE, env),
             "teilenummer": _table_for(TEILENUMMER_TABLE, env),
+            "wagensuche": _table_for(WAGENSUCHE_TABLE, env),
             "rsrd_erp_numbers": _table_for(RSRD_ERP_TABLE, env),
             "rsrd_erp_full": _table_for(RSRD_ERP_FULL_TABLE, env),
             "rsrd_upload": _table_for(RSRD_UPLOAD_TABLE, env),
@@ -1585,6 +2125,162 @@ def _run_compass_to_sqlite(sql_file: Path, table: str, env: str) -> subprocess.C
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
+def _run_compass_query(sql: str, env: str) -> Dict[str, Any]:
+    ionapi = _ionapi_path(env, "compass")
+    normalized = _normalize_env(env)
+    cmd = [
+        sys.executable,
+        str(PROJECT_ROOT / "python" / "compass_query.py"),
+        "--scheme",
+        DEFAULT_SCHEME,
+        "--sql",
+        sql,
+        "--output",
+        "json",
+        "--ionapi",
+        str(ionapi),
+    ]
+    if DEFAULT_CATALOG:
+        cmd.extend(["--catalog", DEFAULT_CATALOG])
+    if DEFAULT_COLLECTION:
+        cmd.extend(["--default-collection", DEFAULT_COLLECTION])
+    if normalized == "tst" and TST_COMPASS_JDBC.exists():
+        cmd.extend(["--jdbc-jar", str(TST_COMPASS_JDBC)])
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Compass-Query fehlgeschlagen: {result.stderr or result.stdout}",
+        )
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail=f"Ungültiges Compass-JSON: {exc}") from exc
+    return payload.get("result") or {}
+
+
+def _fetch_msy_text(txid: str, env: str) -> str:
+    txid_value = re.sub(r"\\D", "", str(txid))
+    if not txid_value:
+        return ""
+    cached = _msy_text_cache.get(txid_value)
+    if cached is not None:
+        return cached
+    sql = f"""
+        SELECT TX60, LINO
+        FROM (
+            SELECT
+                TX60,
+                LINO,
+                ROW_NUMBER() OVER (PARTITION BY LINO ORDER BY Timestamp DESC) AS rn
+            FROM MSYTXL
+            WHERE TXID = {txid_value}
+              AND LINO BETWEEN 1 AND 5
+        ) t
+        WHERE rn = 1
+        ORDER BY LINO
+    """
+    result = _run_compass_query(sql, env)
+    rows = result.get("rows") or []
+    parts = [str(row.get("TX60") or "") for row in rows]
+    text = "".join(parts)
+    _msy_text_cache[txid_value] = text
+    return text
+
+
+def _fetch_wg_tsi_text(sern: str, env: str) -> str:
+    digits = re.sub(r"\\D", "", str(sern))
+    if not digits:
+        return ""
+    cached = _wg_tsi_text_cache.get(digits)
+    if cached is not None:
+        return cached
+    sql = f"""
+        WITH Tx AS (
+            SELECT A.TXID, 1 AS prio, A.ATNR
+            FROM MIATTR A
+            WHERE A.ATID = 'WG-TSI_ZUS_ZERT'
+              AND REPLACE(REPLACE(CAST(A.BANO AS VARCHAR(100)), ' ', ''), '-', '') = '{digits}'
+            UNION ALL
+            SELECT A.TXID, 2 AS prio, A.ATNR
+            FROM MIATTR A
+            JOIN MROUHI M
+              ON A.ITNO = M.ITNO
+             AND A.BANO = M.SERN
+             AND M.REDN = 0
+             AND M.REMD = 0
+            WHERE A.ATID = 'WG-TSI_ZUS_ZERT'
+              AND REPLACE(REPLACE(CAST(M.HISN AS VARCHAR(100)), ' ', ''), '-', '') = '{digits}'
+        ),
+        Picked AS (
+            SELECT TXID
+            FROM Tx
+            ORDER BY prio, ATNR DESC
+            LIMIT 1
+        ),
+        Lines AS (
+            SELECT
+                X.TX60,
+                X.LINO,
+                ROW_NUMBER() OVER (PARTITION BY X.LINO ORDER BY X.Timestamp DESC) AS rn
+            FROM MSYTXL X
+            JOIN Picked P ON X.TXID = P.TXID
+            WHERE X.LINO BETWEEN 1 AND 5
+        )
+        SELECT TX60, LINO
+        FROM Lines
+        WHERE rn = 1
+        ORDER BY LINO
+    """
+    result = _run_compass_query(sql, env)
+    rows = result.get("rows") or []
+    parts = [str(row.get("TX60") or "") for row in rows]
+    text = "".join(parts)
+    _wg_tsi_text_cache[digits] = text
+    return text
+
+
+def _fetch_wg_tsi_txid(sern: str, env: str) -> str:
+    digits = re.sub(r"\D", "", str(sern))
+    if not digits:
+        return ""
+    cached = _wg_tsi_txid_cache.get(digits)
+    if cached is not None:
+        return cached
+    sql = f"""
+        SELECT A.TXID
+        FROM MIATTR A
+        WHERE A.ATID = 'WG-TSI_ZUS_ZERT'
+          AND REPLACE(REPLACE(CAST(A.BANO AS VARCHAR(100)), ' ', ''), '-', '') = '{digits}'
+        ORDER BY A.ATNR DESC
+        LIMIT 1
+    """
+    result = _run_compass_query(sql, env)
+    rows = result.get("rows") or []
+    if not rows:
+        # fallback: try MROUHI mapping
+        sql2 = f"""
+            SELECT A.TXID
+            FROM MIATTR A
+            JOIN MROUHI M
+              ON A.ITNO = M.ITNO
+             AND A.BANO = M.SERN
+             AND M.REDN = 0
+             AND M.REMD = 0
+            WHERE A.ATID = 'WG-TSI_ZUS_ZERT'
+              AND REPLACE(REPLACE(CAST(M.HISN AS VARCHAR(100)), ' ', ''), '-', '') = '{digits}'
+            ORDER BY A.ATNR DESC
+            LIMIT 1
+        """
+        result2 = _run_compass_query(sql2, env)
+        rows = result2.get("rows") or []
+        if not rows:
+            return ""
+    txid = str(rows[0].get("TXID") or "")
+    _wg_tsi_txid_cache[digits] = txid
+    return txid
+
+
 def _build_load_erp_cmd(env: str) -> List[str]:
     ionapi = _ionapi_path(env, "compass")
     table_name = _table_for(RSRD_ERP_TABLE, env)
@@ -1674,7 +2370,136 @@ def _job_snapshot(job_id: str) -> Dict[str, Any]:
             raise HTTPException(status_code=404, detail="Job nicht gefunden.")
         snapshot = dict(job)
         snapshot["logs"] = list(job.get("logs", []))
-        return snapshot
+    return snapshot
+
+
+def _goldenview_safe_name(name: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "_", name.strip()) or "query"
+    return cleaned.strip("_")
+
+
+def _goldenview_write_excel(path: Path, columns: List[str], rows: List[List[Any]]) -> None:
+    if rows and isinstance(rows[0], dict):
+        rows = [[row.get(col) for col in columns] for row in rows]  # type: ignore[index]
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet(title="Data")
+    ws.append(columns)
+    for row in rows:
+        ws.append([None if v is None else v for v in row])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+
+
+def _goldenview_write_md(path: Path, query: dict, fields: List[dict]) -> None:
+    lines = [
+        f"# {query.get('name') or 'SQL'}",
+        "",
+        f"Erstellt am: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}",
+        "",
+    ]
+    if query.get("description"):
+        lines.extend([query["description"], ""])
+    lines.extend(["## SQL", "", "```sql", query.get("sql_text", ""), "```", ""])
+    if fields:
+        lines.append("## Felder")
+        lines.append("")
+        lines.append("| Feld | Beschreibung | Verbundene Felder |")
+        lines.append("| --- | --- | --- |")
+        for field in fields:
+            connected = ", ".join(field.get("connected_fields") or [])
+            desc = field.get("field_description") or ""
+            lines.append(f"| {field.get('field_name')} | {desc} | {connected} |")
+        lines.append("")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _goldenview_write_latest_readme(latest_dir: Path) -> None:
+    files = sorted([p for p in latest_dir.glob("*") if p.is_file() and p.name != "README.md"])
+    lines = [
+        "# Latest Exports",
+        "",
+        f"Aktualisiert: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}",
+        "",
+    ]
+    if not files:
+        lines.append("Keine Dateien vorhanden.")
+    else:
+        for file in files:
+            lines.append(f"- {file.name}")
+    (latest_dir / "README.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _goldenview_job(query_id: int, job_id: str) -> None:
+    try:
+        _append_job_log(job_id, "Lade SQL aus SQLite ...")
+        with _connect() as conn:
+            _init_goldenview_db(conn)
+            query = conn.execute(
+                f"""
+                SELECT id, name, sql_text, description
+                FROM {GOLDENVIEW_QUERIES_TABLE}
+                WHERE id = ?
+                """,
+                (query_id,),
+            ).fetchone()
+            if not query:
+                raise ValueError("Eintrag nicht gefunden.")
+            fields = conn.execute(
+                f"""
+                SELECT field_name, field_description, connected_fields
+                FROM {GOLDENVIEW_FIELDS_TABLE}
+                WHERE query_id = ?
+                ORDER BY id ASC
+                """,
+                (query_id,),
+            ).fetchall()
+        query_dict = dict(query)
+        field_list = [
+            {
+                "field_name": row["field_name"],
+                "field_description": row["field_description"] or "",
+                "connected_fields": json.loads(row["connected_fields"] or "[]"),
+            }
+            for row in fields
+        ]
+        _append_job_log(job_id, "Führe SQL gegen M3 aus ...")
+        result = _run_compass_query(query_dict["sql_text"], "prd")
+        columns = result.get("columns") or []
+        rows = result.get("rows") or []
+        safe_name = _goldenview_safe_name(query_dict.get("name") or f"sql_{query_id}")
+        stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        day_folder = datetime.utcnow().strftime("%Y-%m-%d")
+        base_exports = GOLDENVIEW_EXPORT_DIR / "exports"
+        latest_dir = base_exports / "latest"
+        archive_dir = base_exports / "archive" / day_folder
+        archive_excel = archive_dir / f"{safe_name}_{stamp}.xlsx"
+        archive_md = archive_dir / f"{safe_name}_{stamp}.md"
+        latest_excel = latest_dir / f"{safe_name}.xlsx"
+        latest_md = latest_dir / f"{safe_name}.md"
+        _append_job_log(job_id, f"Schreibe Excel ({len(rows)} Zeilen) ...")
+        _goldenview_write_excel(archive_excel, columns, rows)
+        _append_job_log(job_id, "Schreibe Markdown ...")
+        _goldenview_write_md(archive_md, query_dict, field_list)
+        latest_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(archive_excel, latest_excel)
+        shutil.copy2(archive_md, latest_md)
+        _goldenview_write_latest_readme(latest_dir)
+        with _connect() as conn:
+            _init_goldenview_db(conn)
+            conn.execute(
+                f"""
+                UPDATE {GOLDENVIEW_QUERIES_TABLE}
+                SET excel_path = ?, md_path = ?, generated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (str(latest_excel), str(latest_md), query_id),
+            )
+            conn.commit()
+        _finish_job(job_id, "success", result={"excel": str(latest_excel), "md": str(latest_md)})
+    except Exception as exc:  # noqa: BLE001
+        _append_job_log(job_id, f"Fehler: {exc}")
+        _finish_job(job_id, "error", error=str(exc))
 
 
 def _start_subprocess_job(
@@ -1795,6 +2620,87 @@ def reload_teilenummer(env: str = Query(DEFAULT_ENV)) -> dict:
         conn.execute(f'UPDATE "{table_name}" SET "CHECKED" = ""')
         conn.commit()
     return {"message": "Reload erfolgreich", "stdout": result.stdout, "env": _normalize_env(env)}
+
+
+@app.post("/api/wagensuche/reload")
+def reload_wagensuche(env: str = Query(DEFAULT_ENV)) -> dict:
+    sql_file = _wagensuche_sql_file(env)
+    if not sql_file.exists():
+        raise HTTPException(status_code=500, detail=f"SQL-Datei nicht gefunden: {sql_file}")
+    table_name = _table_for(WAGENSUCHE_TABLE, env)
+    result = _run_compass_to_sqlite(sql_file, table_name, env)
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Reload fehlgeschlagen: {result.stderr or result.stdout}",
+        )
+    with _connect() as conn:
+        count = conn.execute(f'SELECT COUNT(*) FROM "{table_name}"').fetchone()[0]
+    return {
+        "message": "Reload erfolgreich",
+        "count": count,
+        "stdout": result.stdout,
+        "env": _normalize_env(env),
+    }
+
+
+@app.get("/api/wagensuche/suggest")
+def wagensuche_suggest(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(15, ge=1, le=50),
+    env: str = Query(DEFAULT_ENV),
+) -> dict:
+    table_name = _table_for(WAGENSUCHE_TABLE, env)
+    query = q.strip()
+    if not query:
+        return {"items": [], "env": _normalize_env(env)}
+    query_compact = re.sub(r"\D", "", query)
+    if "*" in query:
+        like_raw = query.replace("*", "%")
+    else:
+        like_raw = f"{query}%"
+    if "*" in query_compact:
+        like_compact = query_compact.replace("*", "%")
+    else:
+        like_compact = f"{query_compact}%"
+    with _connect() as conn:
+        if not _table_exists(conn, table_name):
+            raise HTTPException(status_code=404, detail=f"Tabelle {table_name} nicht gefunden.")
+        rows = conn.execute(
+            f'''SELECT ITNO, SERN, ITDS
+                FROM "{table_name}"
+                WHERE SERN LIKE ?
+                   OR REPLACE(REPLACE(SERN, ' ', ''), '-', '') LIKE ?
+                ORDER BY SERN
+                LIMIT ?''',
+            (like_raw, like_compact, limit),
+        ).fetchall()
+    items = [
+        {"itno": (row["ITNO"] or "").strip(), "sern": (row["SERN"] or "").strip(), "itds": (row["ITDS"] or "").strip()}
+        for row in rows
+    ]
+    return {"items": items, "env": _normalize_env(env)}
+
+
+@app.get("/api/wagensuche/position")
+def wagensuche_position(
+    sern: str = Query(..., min_length=1),
+) -> dict:
+    value = sern.strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Seriennummer fehlt.")
+    result = _wagensuche_latest_position(value)
+    if not result:
+        return {"found": False, "sern": value}
+    return {"found": True, "data": result}
+
+
+@app.get("/api/wagensuche/maps_key")
+def wagensuche_maps_key() -> dict:
+    key = os.getenv("VITE_GOOGLE_MAPS_API_KEY", "").strip()
+    if not key:
+        raise HTTPException(status_code=500, detail="Google Maps API Key fehlt.")
+    return {"key": key}
 
 
 @app.post("/api/teilenummer/check")
@@ -5654,9 +6560,11 @@ def rsrd2_wagons(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     env: str = Query(DEFAULT_ENV),
+    rsrd_env: str | None = Query(None),
 ) -> dict:
+    rsrd_env_norm = _normalize_rsrd_env(rsrd_env, env)
     with _connect() as conn:
-        tables = _ensure_rsrd_tables(conn, env)
+        tables = _ensure_rsrd_tables(conn, rsrd_env_norm)
         rows = [
             {
                 "wagon_id": row["wagon_id"],
@@ -5674,7 +6582,519 @@ def rsrd2_wagons(
             )
         ]
         total = conn.execute(f"SELECT COUNT(*) FROM {tables.wagons}").fetchone()[0]
-    return {"rows": rows, "limit": limit, "offset": offset, "total": total, "env": _normalize_env(env)}
+    return {
+        "rows": rows,
+        "limit": limit,
+        "offset": offset,
+        "total": total,
+        "erp_env": _normalize_env(env),
+        "rsrd_env": rsrd_env_norm,
+    }
+
+
+@app.get("/api/rsrd2/suggestions")
+def rsrd2_suggestions(
+    field: str = Query(...),
+    q: str = Query(""),
+    limit: int = Query(20, ge=1, le=200),
+    env: str = Query(DEFAULT_ENV),
+) -> dict:
+    field = field.strip().lower()
+    if not q.strip():
+        return {"values": [], "env": _normalize_env(env)}
+
+    erp_table = _table_for(RSRD_ERP_FULL_TABLE, env)
+    numbers_table = _table_for(RSRD_ERP_TABLE, env)
+    with _connect() as conn:
+        if not _table_exists(conn, erp_table):
+            raise HTTPException(status_code=404, detail=f"Tabelle {erp_table} nicht gefunden.")
+        numbers_exists = _table_exists(conn, numbers_table)
+        join_numbers = ""
+        wagen_typ_expr = "e.WAGEN_TYP"
+        if numbers_exists:
+            join_numbers = (
+                f"LEFT JOIN {numbers_table} n "
+                "ON n.wagon_sern_numeric = CAST(e.WAGEN_SERIENNUMMER AS TEXT)"
+            )
+            wagen_typ_expr = "COALESCE(e.WAGEN_TYP, n.wagon_typ)"
+
+        if field == "sern":
+            expr = "e.ERP_SERIENNUMMER"
+            where_expr = "REPLACE(REPLACE(e.ERP_SERIENNUMMER, ' ', ''), '-', '')"
+            pattern = _sern_filter_pattern(q)
+        elif field == "baureihe":
+            expr = "e.WG_BAUREIHE"
+            where_expr = expr
+            pattern = _like_pattern(q)
+        elif field == "halter":
+            expr = "e.WG_HALTER_CODE"
+            where_expr = expr
+            pattern = _like_pattern(q)
+        elif field in {"wagen_typ", "uic"}:
+            expr = wagen_typ_expr
+            where_expr = wagen_typ_expr
+            pattern = _like_pattern(q)
+        else:
+            raise HTTPException(status_code=400, detail="Unbekanntes Feld.")
+
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT {expr} AS value
+            FROM {erp_table} e
+            {join_numbers}
+            WHERE {where_expr} IS NOT NULL
+              AND TRIM({where_expr}) <> ''
+              AND {where_expr} LIKE ? ESCAPE '\\'
+            ORDER BY value
+            LIMIT ?
+            """,
+            (pattern, limit),
+        ).fetchall()
+    values = [row["value"] for row in rows if row and row["value"] is not None]
+    return {"values": values, "env": _normalize_env(env)}
+
+
+@app.get("/api/rsrd2/overview")
+def rsrd2_overview(
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    env: str = Query(DEFAULT_ENV),
+    rsrd_env: str | None = Query(None),
+    sern: str | None = Query(None),
+    baureihe: str | None = Query(None),
+    halter: str | None = Query(None),
+    uic: str | None = Query(None),
+    status: str | None = Query(None),
+) -> dict:
+    rsrd_env_norm = _normalize_rsrd_env(rsrd_env, env)
+    erp_table = _table_for(RSRD_ERP_FULL_TABLE, env)
+    sync_table = _table_for(RSRD_SYNC_TABLE, env)
+    selection_table = _table_for(RSRD_SYNC_SELECTION_TABLE, env)
+    numbers_table = _table_for(RSRD_ERP_TABLE, env)
+    filters = []
+    params: List[Any] = []
+
+    if sern:
+        filters.append(
+            "REPLACE(REPLACE(CAST(e.WAGEN_SERIENNUMMER AS TEXT), ' ', ''), '-', '') LIKE ? ESCAPE '\\'"
+        )
+        params.append(_sern_filter_pattern(sern))
+    if baureihe:
+        filters.append("e.WG_BAUREIHE LIKE ? ESCAPE '\\'")
+        params.append(_like_pattern(baureihe))
+    if halter:
+        filters.append("e.WG_HALTER_CODE LIKE ? ESCAPE '\\'")
+        params.append(_like_pattern(halter))
+
+    with _connect() as conn:
+        if not _table_exists(conn, erp_table):
+            raise HTTPException(status_code=404, detail=f"Tabelle {erp_table} nicht gefunden.")
+        _ensure_rsrd_sync_table(conn, env)
+        _ensure_rsrd_sync_selection_table(conn, env)
+        tables = _ensure_rsrd_tables(conn, rsrd_env_norm)
+        numbers_exists = _table_exists(conn, numbers_table)
+        join_numbers = ""
+        wagen_typ_expr = "e.WAGEN_TYP"
+        if numbers_exists:
+            join_numbers = (
+                f"LEFT JOIN {numbers_table} n "
+                "ON n.wagon_sern_numeric = CAST(e.WAGEN_SERIENNUMMER AS TEXT)"
+            )
+            wagen_typ_expr = "COALESCE(e.WAGEN_TYP, n.wagon_typ)"
+
+        if uic:
+            if numbers_exists:
+                filters.append("COALESCE(e.WAGEN_TYP, n.wagon_typ) LIKE ? ESCAPE '\\'")
+            else:
+                filters.append("e.WAGEN_TYP LIKE ? ESCAPE '\\'")
+            params.append(_like_pattern(uic))
+        if status:
+            status_norm = status.strip().lower()
+            if status_norm in {"green", "ok", "present"}:
+                filters.append("r.wagon_id IS NOT NULL")
+            elif status_norm in {"red", "missing"}:
+                filters.append("r.wagon_id IS NULL")
+
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+        total = conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM {erp_table} e
+            {join_numbers}
+            LEFT JOIN {tables.detail} r
+              ON r.wagon_number_freight = REPLACE(REPLACE(CAST(e.WAGEN_SERIENNUMMER AS TEXT), ' ', ''), '-', '')
+            {where_clause}
+            """,
+            params,
+        ).fetchone()[0]
+        rows = conn.execute(
+            f"""
+            SELECT
+                CAST(e.WAGEN_SERIENNUMMER AS TEXT) AS wagon_number,
+                e.WG_BAUREIHE AS baureihe,
+                {wagen_typ_expr} AS wagen_typ,
+                e.WG_HALTER_CODE AS halter_code,
+                s.enabled AS sync_enabled,
+                sel.sync_data_env AS sync_data_env,
+                sel.sync_km_env AS sync_km_env,
+                sel.sync_docs_env AS sync_docs_env,
+                sel.one_time_transfer AS one_time_transfer,
+                sel.updated_at AS sync_updated_at,
+                r.wagon_id AS rsrd_wagon_id
+            FROM {erp_table} e
+            LEFT JOIN {sync_table} s
+              ON s.wagon_number_freight = CAST(e.WAGEN_SERIENNUMMER AS TEXT)
+            LEFT JOIN {selection_table} sel
+              ON sel.wagon_number_freight = CAST(e.WAGEN_SERIENNUMMER AS TEXT)
+            {join_numbers}
+            LEFT JOIN {tables.detail} r
+              ON r.wagon_number_freight = REPLACE(REPLACE(CAST(e.WAGEN_SERIENNUMMER AS TEXT), ' ', ''), '-', '')
+            {where_clause}
+            ORDER BY CAST(e.WAGEN_SERIENNUMMER AS TEXT)
+            LIMIT ? OFFSET ?
+            """,
+            params + [limit, offset],
+        ).fetchall()
+    out_rows = []
+    for row in rows:
+        item = dict(row)
+        item["rsrd_present"] = bool(item.get("rsrd_wagon_id"))
+        out_rows.append(item)
+
+    return {
+        "rows": out_rows,
+        "limit": limit,
+        "offset": offset,
+        "total": total,
+        "erp_env": _normalize_env(env),
+        "rsrd_env": rsrd_env_norm,
+    }
+
+
+@app.post("/api/rsrd2/sync_flag")
+def rsrd2_sync_flag(
+    env: str = Query(DEFAULT_ENV),
+    payload: dict = Body(...),
+) -> dict:
+    wagon = str(payload.get("wagon") or "").strip()
+    enabled = bool(payload.get("enabled"))
+    if not wagon:
+        raise HTTPException(status_code=400, detail="Wagennummer fehlt.")
+    table_name = _table_for(RSRD_SYNC_TABLE, env)
+    timestamp = datetime.utcnow().isoformat(timespec="seconds")
+    with _connect() as conn:
+        _ensure_table(conn, table_name, None)
+        conn.execute(
+            f"""
+            INSERT INTO {table_name} (wagon_number_freight, enabled, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(wagon_number_freight)
+            DO UPDATE SET enabled=excluded.enabled, updated_at=excluded.updated_at
+            """,
+            (wagon, "1" if enabled else "0", timestamp),
+        )
+        conn.commit()
+    return {"wagon": wagon, "enabled": enabled, "updated_at": timestamp, "env": _normalize_env(env)}
+
+
+@app.post("/api/rsrd2/sync_env")
+def rsrd2_sync_env(
+    env: str = Query(DEFAULT_ENV),
+    payload: dict = Body(...),
+) -> dict:
+    wagon = str(payload.get("wagon") or "").strip()
+    kind = str(payload.get("kind") or "").strip().lower()
+    value = str(payload.get("value") or "").strip().upper()
+    if not wagon:
+        raise HTTPException(status_code=400, detail="Wagennummer fehlt.")
+    column_map = {
+        "data": "sync_data_env",
+        "km": "sync_km_env",
+        "docs": "sync_docs_env",
+    }
+    column = column_map.get(kind)
+    if not column:
+        raise HTTPException(status_code=400, detail="Ungültiger Sync-Typ.")
+    if value not in {"N", "T", "P"}:
+        value = "N"
+    table_name = _table_for(RSRD_SYNC_SELECTION_TABLE, env)
+    timestamp = datetime.utcnow().isoformat(timespec="seconds")
+    with _connect() as conn:
+        _ensure_rsrd_sync_selection_table(conn, env)
+        conn.execute(
+            f"""
+            INSERT INTO {table_name} (wagon_number_freight, {column}, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(wagon_number_freight)
+            DO UPDATE SET {column}=excluded.{column}, updated_at=excluded.updated_at
+            """,
+            (wagon, value, timestamp),
+        )
+        conn.commit()
+    return {"wagon": wagon, "kind": kind, "value": value, "updated_at": timestamp, "env": _normalize_env(env)}
+
+
+@app.post("/api/rsrd2/sync_env_bulk")
+def rsrd2_sync_env_bulk(
+    env: str = Query(DEFAULT_ENV),
+    rsrd_env: str | None = Query(None),
+    payload: dict = Body(...),
+) -> dict:
+    rsrd_env_norm = _normalize_rsrd_env(rsrd_env, env)
+    kind = str(payload.get("kind") or "").strip().lower()
+    value = str(payload.get("value") or "").strip().upper()
+    filters = payload.get("filters") if isinstance(payload, dict) else None
+    filters = filters if isinstance(filters, dict) else {}
+    column_map = {
+        "data": "sync_data_env",
+        "km": "sync_km_env",
+        "docs": "sync_docs_env",
+    }
+    column = column_map.get(kind)
+    if not column:
+        raise HTTPException(status_code=400, detail="Ungültiger Sync-Typ.")
+    if value not in {"N", "T", "P"}:
+        value = "N"
+
+    sern = str(filters.get("sern") or "").strip()
+    baureihe = str(filters.get("baureihe") or "").strip()
+    halter = str(filters.get("halter") or "").strip()
+    uic = str(filters.get("uic") or "").strip()
+    status = str(filters.get("status") or "").strip().lower()
+
+    where = []
+    params: List[Any] = []
+    if sern:
+        where.append(
+            "REPLACE(REPLACE(CAST(e.WAGEN_SERIENNUMMER AS TEXT), ' ', ''), '-', '') LIKE ? ESCAPE '\\'"
+        )
+        params.append(_sern_filter_pattern(sern))
+    if baureihe:
+        where.append("e.WG_BAUREIHE LIKE ? ESCAPE '\\'")
+        params.append(_like_pattern(baureihe))
+    if halter:
+        where.append("e.WG_HALTER_CODE LIKE ? ESCAPE '\\'")
+        params.append(_like_pattern(halter))
+    if status in {"green", "ok", "present"}:
+        where.append("r.wagon_id IS NOT NULL")
+    elif status in {"red", "missing"}:
+        where.append("r.wagon_id IS NULL")
+    timestamp = datetime.utcnow().isoformat(timespec="seconds")
+
+    erp_table = _table_for(RSRD_ERP_FULL_TABLE, env)
+    selection_table = _table_for(RSRD_SYNC_SELECTION_TABLE, env)
+    numbers_table = _table_for(RSRD_ERP_TABLE, env)
+
+    with _connect() as conn:
+        if not _table_exists(conn, erp_table):
+            raise HTTPException(status_code=404, detail=f"Tabelle {erp_table} nicht gefunden.")
+        tables = _ensure_rsrd_tables(conn, rsrd_env_norm)
+        _ensure_rsrd_sync_selection_table(conn, env)
+        numbers_exists = _table_exists(conn, numbers_table)
+        join_numbers = ""
+        if numbers_exists:
+            join_numbers = (
+                f"LEFT JOIN {numbers_table} n "
+                "ON n.wagon_sern_numeric = CAST(e.WAGEN_SERIENNUMMER AS TEXT)"
+            )
+
+        if uic:
+            if numbers_exists:
+                where.append("COALESCE(e.WAGEN_TYP, n.wagon_typ) LIKE ? ESCAPE '\\'")
+            else:
+                where.append("e.WAGEN_TYP LIKE ? ESCAPE '\\'")
+            params.append(_like_pattern(uic))
+
+        where_clause = f"WHERE {' AND '.join(where)}" if where else ""
+        total = conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM {erp_table} e
+            {join_numbers}
+            LEFT JOIN {tables.detail} r
+              ON r.wagon_number_freight = REPLACE(REPLACE(CAST(e.WAGEN_SERIENNUMMER AS TEXT), ' ', ''), '-', '')
+            {where_clause}
+            """,
+            params,
+        ).fetchone()[0]
+
+        conn.execute(
+            f"""
+            INSERT INTO {selection_table} (wagon_number_freight, {column}, updated_at)
+            SELECT CAST(e.WAGEN_SERIENNUMMER AS TEXT), ?, ?
+            FROM {erp_table} e
+            {join_numbers}
+            LEFT JOIN {tables.detail} r
+              ON r.wagon_number_freight = REPLACE(REPLACE(CAST(e.WAGEN_SERIENNUMMER AS TEXT), ' ', ''), '-', '')
+            {where_clause}
+            ON CONFLICT(wagon_number_freight)
+            DO UPDATE SET {column}=excluded.{column}, updated_at=excluded.updated_at
+            """,
+            [value, timestamp] + params,
+        )
+        conn.commit()
+
+    return {
+        "kind": kind,
+        "value": value,
+        "updated_at": timestamp,
+        "total": total,
+        "erp_env": _normalize_env(env),
+        "rsrd_env": rsrd_env_norm,
+    }
+
+
+@app.post("/api/rsrd2/one_time_transfer")
+def rsrd2_one_time_transfer(
+    env: str = Query(DEFAULT_ENV),
+    payload: dict = Body(...),
+) -> dict:
+    wagon = str(payload.get("wagon") or "").strip()
+    enabled = bool(payload.get("enabled"))
+    if not wagon:
+        raise HTTPException(status_code=400, detail="Wagennummer fehlt.")
+    table_name = _table_for(RSRD_SYNC_SELECTION_TABLE, env)
+    timestamp = datetime.utcnow().isoformat(timespec="seconds")
+    with _connect() as conn:
+        _ensure_rsrd_sync_selection_table(conn, env)
+        conn.execute(
+            f"""
+            INSERT INTO {table_name} (wagon_number_freight, one_time_transfer, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(wagon_number_freight)
+            DO UPDATE SET one_time_transfer=excluded.one_time_transfer, updated_at=excluded.updated_at
+            """,
+            (wagon, "1" if enabled else "0", timestamp),
+        )
+        conn.commit()
+    return {"wagon": wagon, "enabled": enabled, "updated_at": timestamp, "env": _normalize_env(env)}
+
+
+@app.post("/api/rsrd2/one_time_transfer_bulk")
+def rsrd2_one_time_transfer_bulk(
+    env: str = Query(DEFAULT_ENV),
+    rsrd_env: str | None = Query(None),
+    payload: dict = Body(...),
+) -> dict:
+    rsrd_env_norm = _normalize_rsrd_env(rsrd_env, env)
+    value = str(payload.get("value") or "").strip().upper()
+    filters = payload.get("filters") if isinstance(payload, dict) else None
+    filters = filters if isinstance(filters, dict) else {}
+    value = "1" if value == "J" else "0"
+
+    sern = str(filters.get("sern") or "").strip()
+    baureihe = str(filters.get("baureihe") or "").strip()
+    halter = str(filters.get("halter") or "").strip()
+    uic = str(filters.get("uic") or "").strip()
+    status = str(filters.get("status") or "").strip().lower()
+
+    where = []
+    params: List[Any] = []
+    if sern:
+        where.append(
+            "REPLACE(REPLACE(CAST(e.WAGEN_SERIENNUMMER AS TEXT), ' ', ''), '-', '') LIKE ? ESCAPE '\\'"
+        )
+        params.append(_sern_filter_pattern(sern))
+    if baureihe:
+        where.append("e.WG_BAUREIHE LIKE ? ESCAPE '\\'")
+        params.append(_like_pattern(baureihe))
+    if halter:
+        where.append("e.WG_HALTER_CODE LIKE ? ESCAPE '\\'")
+        params.append(_like_pattern(halter))
+    if status in {"green", "ok", "present"}:
+        where.append("r.wagon_id IS NOT NULL")
+    elif status in {"red", "missing"}:
+        where.append("r.wagon_id IS NULL")
+    timestamp = datetime.utcnow().isoformat(timespec="seconds")
+
+    erp_table = _table_for(RSRD_ERP_FULL_TABLE, env)
+    selection_table = _table_for(RSRD_SYNC_SELECTION_TABLE, env)
+    numbers_table = _table_for(RSRD_ERP_TABLE, env)
+
+    with _connect() as conn:
+        if not _table_exists(conn, erp_table):
+            raise HTTPException(status_code=404, detail=f"Tabelle {erp_table} nicht gefunden.")
+        tables = _ensure_rsrd_tables(conn, rsrd_env_norm)
+        _ensure_rsrd_sync_selection_table(conn, env)
+        numbers_exists = _table_exists(conn, numbers_table)
+        join_numbers = ""
+        if numbers_exists:
+            join_numbers = (
+                f"LEFT JOIN {numbers_table} n "
+                "ON n.wagon_sern_numeric = CAST(e.WAGEN_SERIENNUMMER AS TEXT)"
+            )
+
+        if uic:
+            if numbers_exists:
+                where.append("COALESCE(e.WAGEN_TYP, n.wagon_typ) LIKE ? ESCAPE '\\'")
+            else:
+                where.append("e.WAGEN_TYP LIKE ? ESCAPE '\\'")
+            params.append(_like_pattern(uic))
+
+        where_clause = f"WHERE {' AND '.join(where)}" if where else ""
+
+        total = conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM {erp_table} e
+            {join_numbers}
+            LEFT JOIN {tables.detail} r
+              ON r.wagon_number_freight = REPLACE(REPLACE(CAST(e.WAGEN_SERIENNUMMER AS TEXT), ' ', ''), '-', '')
+            {where_clause}
+            """,
+            params,
+        ).fetchone()[0]
+
+        conn.execute(
+            f"""
+            INSERT INTO {selection_table} (wagon_number_freight, one_time_transfer, updated_at)
+            SELECT CAST(e.WAGEN_SERIENNUMMER AS TEXT), ?, ?
+            FROM {erp_table} e
+            {join_numbers}
+            LEFT JOIN {tables.detail} r
+              ON r.wagon_number_freight = REPLACE(REPLACE(CAST(e.WAGEN_SERIENNUMMER AS TEXT), ' ', ''), '-', '')
+            {where_clause}
+            ON CONFLICT(wagon_number_freight)
+            DO UPDATE SET one_time_transfer=excluded.one_time_transfer, updated_at=excluded.updated_at
+            """,
+            [value, timestamp] + params,
+        )
+        conn.commit()
+
+    return {
+        "value": value,
+        "updated_at": timestamp,
+        "total": total,
+        "erp_env": _normalize_env(env),
+        "rsrd_env": rsrd_env_norm,
+    }
+
+
+def _normalize_documents(documents: Any) -> List[Dict[str, Any]]:
+    if not documents:
+        return []
+    docs_obj: Any = documents
+    if isinstance(docs_obj, dict):
+        docs_obj = (
+            docs_obj.get("Document")
+            or docs_obj.get("Documents")
+            or docs_obj.get("DocumentList")
+            or docs_obj
+        )
+    if isinstance(docs_obj, dict):
+        docs_list = [docs_obj]
+    elif isinstance(docs_obj, list):
+        docs_list = docs_obj
+    else:
+        return []
+    cleaned: List[Dict[str, Any]] = []
+    for doc in docs_list:
+        if not isinstance(doc, dict):
+            continue
+        if not doc:
+            continue
+        cleaned.append(doc)
+    return cleaned
 
 
 @app.post("/api/rsrd2/compare")
@@ -5684,24 +7104,36 @@ def rsrd2_compare(
     create_upload: bool = Query(True),
     include_all: bool = Query(False),
     env: str = Query(DEFAULT_ENV),
+    rsrd_env: str | None = Query(None),
     payload: dict | None = Body(default=None),
 ) -> dict:
     wagons = payload.get("wagons") if payload else None
     if wagons is not None:
         if not isinstance(wagons, list) or not all(isinstance(item, (str, int)) for item in wagons):
             raise HTTPException(status_code=400, detail="Feld 'wagons' muss eine Liste von Wagennummern sein.")
-        wagons = [str(item) for item in wagons]
+        normalized = []
+        for item in wagons:
+            raw = str(item).strip()
+            if not raw:
+                continue
+            digits = re.sub(r"\D", "", raw)
+            normalized.append(digits or raw)
+        wagons = normalized
 
+    rsrd_env_norm = _normalize_rsrd_env(rsrd_env, env)
     with _connect() as conn:
-        tables = _ensure_rsrd_tables(conn, env)
-        upload_table = _ensure_rsrd_upload_table(conn, env)
+        tables = _ensure_rsrd_tables(conn, rsrd_env_norm)
+        upload_table = _ensure_rsrd_upload_table(conn, rsrd_env_norm)
         erp_full_table = _table_for(RSRD_ERP_FULL_TABLE, env)
 
         where_clause = ""
         params: List[Any] = []
         if wagons:
             placeholders = ", ".join("?" for _ in wagons)
-            where_clause = f"WHERE CAST(e.WAGEN_SERIENNUMMER AS TEXT) IN ({placeholders})"
+            where_clause = (
+                "WHERE REPLACE(REPLACE(CAST(e.WAGEN_SERIENNUMMER AS TEXT), ' ', ''), '-', '') "
+                f"IN ({placeholders})"
+            )
             params.extend(wagons)
 
         total_query = f"SELECT COUNT(*) FROM {erp_full_table} e {where_clause}"
@@ -5714,10 +7146,13 @@ def rsrd2_compare(
                 r.wagon_number_freight AS rsrd_wagon_number_freight,
                 r.administrative_json,
                 r.design_json,
-                r.dataset_json
+                r.documents_json AS dataset_json,
+                j.payload_json AS raw_payload_json
             FROM {erp_full_table} e
             LEFT JOIN {tables.detail} r
-                ON r.wagon_number_freight = CAST(e.WAGEN_SERIENNUMMER AS TEXT)
+                ON r.wagon_number_freight = REPLACE(REPLACE(CAST(e.WAGEN_SERIENNUMMER AS TEXT), ' ', ''), '-', '')
+            LEFT JOIN {tables.json} j
+                ON j.wagon_id = r.wagon_id
             {where_clause}
             ORDER BY CAST(e.WAGEN_SERIENNUMMER AS TEXT)
         """
@@ -5735,8 +7170,23 @@ def rsrd2_compare(
             design = json.loads(row["design_json"]) if row["design_json"] else {}
             dataset = json.loads(row["dataset_json"]) if row["dataset_json"] else {}
             meta = dataset.get("RSRD2MetaData") if isinstance(dataset, dict) else {}
+            if not meta and row["raw_payload_json"]:
+                try:
+                    payload = json.loads(row["raw_payload_json"]) if row["raw_payload_json"] else {}
+                except Exception:
+                    payload = {}
+                if isinstance(payload, dict):
+                    meta = payload.get("RSRD2MetaData") or {}
+            if wagons and len(wagons) <= 5:
+                try:
+                    long_text = _fetch_wg_tsi_text(erp_row.get("WAGEN_SERIENNUMMER"), env)
+                except HTTPException:
+                    long_text = ""
+                if long_text:
+                    erp_row["WG_TSI_ZUS_ZERT"] = long_text
             diffs = compare_erp_to_rsrd(erp_row, admin, design, meta or {}, include_all=include_all)
             diff_count = sum(1 for diff in diffs if not diff.get("equal"))
+            documents = _normalize_documents(dataset) if isinstance(dataset, dict) else []
 
             payload_obj = build_erp_payload(erp_row)
             wagon_number = (payload_obj.get("AdministrativeDataSet") or {}).get("WagonNumberFreight")
@@ -5778,9 +7228,10 @@ def rsrd2_compare(
                 {
                     "wagon_number_freight": wagon_number_str,
                     "rsrd_wagon_id": row["rsrd_wagon_id"],
-                    "rsrd_missing": not bool(row["dataset_json"]),
+                    "rsrd_missing": not bool(row["administrative_json"] or row["design_json"]),
                     "diff_count": diff_count,
                     "differences": diffs,
+                    "documents": documents,
                 }
             )
 
@@ -5792,22 +7243,125 @@ def rsrd2_compare(
         "offset": offset,
         "total": total,
         "created": created,
-        "env": _normalize_env(env),
+        "erp_env": _normalize_env(env),
+        "rsrd_env": rsrd_env_norm,
+    }
+
+
+@app.post("/api/rsrd2/upload_xml")
+def rsrd2_upload_xml(
+    env: str = Query(DEFAULT_ENV),
+    rsrd_env: str | None = Query(None),
+    upload: bool = Query(False),
+    payload: dict = Body(...),
+) -> dict:
+    wagon = str(payload.get("wagon") or payload.get("sern") or payload.get("wagon_number") or "").strip()
+    if not wagon:
+        raise HTTPException(status_code=400, detail="Wagennummer fehlt.")
+    digits = re.sub(r"\D", "", wagon)
+    wagon_key = digits or wagon
+
+    with _connect() as conn:
+        erp_full_table = _table_for(RSRD_ERP_FULL_TABLE, env)
+        _ensure_table(conn, erp_full_table, None)
+        row = conn.execute(
+            f"""
+            SELECT *
+            FROM {erp_full_table}
+            WHERE REPLACE(REPLACE(CAST(WAGEN_SERIENNUMMER AS TEXT), ' ', ''), '-', '') = ?
+            LIMIT 1
+            """,
+            (wagon_key,),
+        ).fetchone()
+        if not row and wagon:
+            row = conn.execute(
+                f"""
+                SELECT *
+                FROM {erp_full_table}
+                WHERE CAST(WAGEN_SERIENNUMMER AS TEXT) = ?
+                LIMIT 1
+                """,
+                (wagon,),
+            ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Wagen nicht gefunden.")
+
+    erp_row = dict(row)
+    try:
+        long_text = _fetch_wg_tsi_text(erp_row.get("WAGEN_SERIENNUMMER"), env)
+    except HTTPException:
+        long_text = ""
+    if long_text:
+        erp_row["WG_TSI_ZUS_ZERT"] = long_text
+
+    payload_obj = build_erp_payload(erp_row)
+    payload_json = serialize_payload(payload_obj)
+    try:
+        payload_clean = json.loads(payload_json)
+    except json.JSONDecodeError:
+        payload_clean = payload_obj
+    xml = _rsrd_build_upload_xml(payload_clean)
+
+    response_text = None
+    response_status = None
+    request_url = None
+    rsrd_env_norm = _normalize_rsrd_env(rsrd_env, env)
+    if upload:
+        request_url = _resolve_rsrd_upload_url(rsrd_env_norm)
+        if not request_url:
+            raise HTTPException(status_code=500, detail="RSRD WSDL URL fehlt.")
+        user, password = _rsrd_upload_credentials(rsrd_env_norm)
+        headers = {
+            "Accept": "text/xml",
+            "Content-Type": "text/xml; charset=utf-8",
+        }
+        import requests
+
+        resp = requests.post(
+            request_url,
+            headers=headers,
+            data=xml.encode("utf-8"),
+            auth=(user, password),
+            timeout=60,
+        )
+        response_status = resp.status_code
+        response_text = resp.text
+
+    return {
+        "wagon": wagon_key,
+        "erp_env": _normalize_env(env),
+        "rsrd_env": rsrd_env_norm,
+        "upload": upload,
+        "xml": xml,
+        "request_url": request_url,
+        "response_status": response_status,
+        "response_text": response_text,
     }
 
 
 @app.post("/api/rsrd2/sync")
-def rsrd2_sync(env: str = Query(DEFAULT_ENV), payload: dict = Body(...)) -> dict:
+def rsrd2_sync(
+    env: str = Query(DEFAULT_ENV),
+    rsrd_env: str | None = Query(None),
+    payload: dict = Body(...),
+) -> dict:
     wagons = payload.get("wagons") or []
     if not isinstance(wagons, list) or not all(isinstance(item, str) for item in wagons):
         raise HTTPException(status_code=400, detail="Feld 'wagons' muss eine Liste von Wagennummern sein.")
     snapshots = bool(payload.get("snapshots", True))
+    rsrd_env_norm = _normalize_rsrd_env(rsrd_env, env)
     try:
-        tables = _rsrd_tables(env)
-        rsrd_sync_wagons(wagons, keep_snapshots=snapshots, tables=tables, env=env)
+        tables = _rsrd_tables(rsrd_env_norm)
+        rsrd_sync_wagons(wagons, keep_snapshots=snapshots, tables=tables, env=rsrd_env_norm)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"synced": len(wagons), "snapshots": snapshots, "env": _normalize_env(env)}
+    return {
+        "synced": len(wagons),
+        "snapshots": snapshots,
+        "erp_env": _normalize_env(env),
+        "rsrd_env": rsrd_env_norm,
+    }
 
 
 @app.post("/api/rsrd2/sync_all")
@@ -5815,14 +7369,22 @@ def rsrd2_sync_all(
     limit: int | None = Query(None, gt=0),
     snapshots: bool = Query(True),
     env: str = Query(DEFAULT_ENV),
+    rsrd_env: str | None = Query(None),
 ) -> dict:
+    rsrd_env_norm = _normalize_rsrd_env(rsrd_env, env)
     with _connect() as conn:
         wagons = _fetch_erp_wagon_numbers(conn, env, limit)
     if not wagons:
         raise HTTPException(status_code=404, detail="Keine Wagennummern im ERP-Cache gefunden.")
     try:
-        tables = _rsrd_tables(env)
-        stats = rsrd_sync_wagons(wagons, keep_snapshots=snapshots, mode="full", tables=tables, env=env)
+        tables = _rsrd_tables(rsrd_env_norm)
+        stats = rsrd_sync_wagons(
+            wagons,
+            keep_snapshots=snapshots,
+            mode="full",
+            tables=tables,
+            env=rsrd_env_norm,
+        )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {
@@ -5830,7 +7392,8 @@ def rsrd2_sync_all(
         "staged": stats["staged"],
         "processed": stats["processed"],
         "snapshots": snapshots,
-        "env": _normalize_env(env),
+        "erp_env": _normalize_env(env),
+        "rsrd_env": rsrd_env_norm,
     }
 
 
@@ -5839,44 +7402,347 @@ def rsrd2_fetch_json(
     limit: int | None = Query(None, gt=0),
     snapshots: bool = Query(False),
     env: str = Query(DEFAULT_ENV),
+    rsrd_env: str | None = Query(None),
 ) -> dict:
+    rsrd_env_norm = _normalize_rsrd_env(rsrd_env, env)
     with _connect() as conn:
         wagons = _fetch_erp_wagon_numbers(conn, env, limit)
     if not wagons:
         raise HTTPException(status_code=404, detail="Keine Wagennummern im ERP-Cache gefunden.")
     try:
-        tables = _rsrd_tables(env)
-        stats = rsrd_sync_wagons(wagons, keep_snapshots=snapshots, mode="stage", tables=tables, env=env)
+        tables = _rsrd_tables(rsrd_env_norm)
+        stats = rsrd_sync_wagons(
+            wagons,
+            keep_snapshots=snapshots,
+            mode="stage",
+            tables=tables,
+            env=rsrd_env_norm,
+        )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"staged": stats["staged"], "snapshots": snapshots, "env": _normalize_env(env)}
+    return {
+        "staged": stats["staged"],
+        "snapshots": snapshots,
+        "erp_env": _normalize_env(env),
+        "rsrd_env": rsrd_env_norm,
+    }
 
 
 @app.post("/api/rsrd2/process_json")
-def rsrd2_process_json(limit: int | None = Query(None, gt=0), env: str = Query(DEFAULT_ENV)) -> dict:
+def rsrd2_process_json(
+    limit: int | None = Query(None, gt=0),
+    env: str = Query(DEFAULT_ENV),
+    rsrd_env: str | None = Query(None),
+) -> dict:
+    rsrd_env_norm = _normalize_rsrd_env(rsrd_env, env)
     try:
-        tables = _rsrd_tables(env)
+        tables = _rsrd_tables(rsrd_env_norm)
         stats = rsrd_sync_wagons(
             [],
             keep_snapshots=False,
             mode="process",
             process_limit=limit,
             tables=tables,
-            env=env,
+            env=rsrd_env_norm,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"processed": stats["processed"], "limit": limit, "env": _normalize_env(env)}
+    return {
+        "processed": stats["processed"],
+        "limit": limit,
+        "erp_env": _normalize_env(env),
+        "rsrd_env": rsrd_env_norm,
+    }
+
+
+# Hidden M3 bridge (always PRD)
+@app.get("/M3BRIDGE.html", include_in_schema=False)
+def m3_bridge() -> PlainTextResponse:
+    _ionapi_path("prd", "mi")
+    return PlainTextResponse("OK")
+
+
+# Hidden SQL bridge (always PRD)
+@app.post("/query", include_in_schema=False)
+def m3_sql_bridge(
+    payload: dict = Body(...),
+    format: str | None = Query(None),
+) -> dict:
+    sql = str(payload.get("sql") or "").strip()
+    if not sql:
+        raise HTTPException(status_code=400, detail="SQL fehlt.")
+    result = _run_compass_query(sql, "prd")
+    columns = result.get("columns") or []
+    rows = result.get("rows") or []
+    fmt = (format or "").strip().lower()
+    if fmt in {"kv", "dict", "map", "object"}:
+        if rows and not isinstance(rows[0], dict):
+            rows = [dict(zip(columns, row)) for row in rows]
+        return {"columns": columns, "rows": rows}
+    if rows and isinstance(rows[0], dict):
+        rows = [[row.get(col) for col in columns] for row in rows]
+    return {"columns": columns, "rows": rows}
+
+
+@app.get("/api/goldenview/list")
+def goldenview_list() -> dict:
+    with _connect() as conn:
+        _init_goldenview_db(conn)
+        rows = conn.execute(
+            f"""
+            SELECT q.id, q.name, q.description, q.created_at, q.excel_path, q.md_path, q.generated_at, q.commit_at,
+                   (SELECT COUNT(1) FROM {GOLDENVIEW_FIELDS_TABLE} f WHERE f.query_id = q.id) AS field_count
+            FROM {GOLDENVIEW_QUERIES_TABLE} q
+            ORDER BY q.id DESC
+            """
+        ).fetchall()
+    return {
+        "items": [dict(row) for row in rows],
+        "repo_root": str(GOLDENVIEW_EXPORT_DIR),
+        "repo_url": os.getenv("GOLDENVIEW_REPO_URL", "https://github.com/crupp-mfd/M3ChatbotExcels"),
+    }
+
+
+@app.get("/api/goldenview/detail/{query_id}")
+def goldenview_detail(query_id: int) -> dict:
+    with _connect() as conn:
+        _init_goldenview_db(conn)
+        query = conn.execute(
+            f"""
+            SELECT id, name, sql_text, description, created_at, excel_path, md_path, generated_at
+            FROM {GOLDENVIEW_QUERIES_TABLE}
+            WHERE id = ?
+            """,
+            (query_id,),
+        ).fetchone()
+        if not query:
+            raise HTTPException(status_code=404, detail="Eintrag nicht gefunden.")
+        fields = conn.execute(
+            f"""
+            SELECT field_name, field_description, connected_fields
+            FROM {GOLDENVIEW_FIELDS_TABLE}
+            WHERE query_id = ?
+            ORDER BY id ASC
+            """,
+            (query_id,),
+        ).fetchall()
+    return {
+        "query": dict(query),
+        "fields": [
+            {
+                "name": row["field_name"],
+                "description": row["field_description"] or "",
+                "connected_fields": json.loads(row["connected_fields"] or "[]"),
+            }
+            for row in fields
+        ],
+    }
+
+
+@app.post("/api/goldenview/save")
+def goldenview_save(payload: dict = Body(...)) -> dict:
+    query_id = payload.get("id")
+    name = str(payload.get("name") or "").strip()
+    sql_text = str(payload.get("sql") or "").strip()
+    description = str(payload.get("description") or "").strip()
+    fields = payload.get("fields") or []
+    if not sql_text:
+        raise HTTPException(status_code=400, detail="SQL fehlt.")
+    if not isinstance(fields, list):
+        raise HTTPException(status_code=400, detail="Felder müssen eine Liste sein.")
+    with _connect() as conn:
+        _init_goldenview_db(conn)
+        if query_id:
+            conn.execute(
+                f"""
+                UPDATE {GOLDENVIEW_QUERIES_TABLE}
+                SET name = ?, sql_text = ?, description = ?
+                WHERE id = ?
+                """,
+                (name or None, sql_text, description or None, int(query_id)),
+            )
+            conn.execute(
+                f"DELETE FROM {GOLDENVIEW_FIELDS_TABLE} WHERE query_id = ?",
+                (int(query_id),),
+            )
+            current_id = int(query_id)
+        else:
+            cur = conn.execute(
+                f"INSERT INTO {GOLDENVIEW_QUERIES_TABLE} (name, sql_text, description) VALUES (?, ?, ?)",
+                (name or None, sql_text, description or None),
+            )
+            current_id = cur.lastrowid
+        for field in fields:
+            field_name = str(field.get("name") or "").strip()
+            if not field_name:
+                continue
+            field_desc = str(field.get("description") or "").strip()
+            connected = field.get("connected_fields") or []
+            if not isinstance(connected, list):
+                connected = []
+            conn.execute(
+                f"""
+                INSERT INTO {GOLDENVIEW_FIELDS_TABLE}
+                (query_id, field_name, field_description, connected_fields)
+                VALUES (?, ?, ?, ?)
+                """,
+                (current_id, field_name, field_desc or None, json.dumps(connected)),
+            )
+        conn.commit()
+    return {"id": current_id, "status": "ok"}
+
+
+@app.post("/api/goldenview/generate")
+def goldenview_generate(payload: dict = Body(...)) -> dict:
+    query_id = payload.get("id")
+    if not query_id:
+        raise HTTPException(status_code=400, detail="ID fehlt.")
+    job = _create_job("goldenview_generate", "prd")
+    threading.Thread(target=_goldenview_job, args=(int(query_id), job["id"]), daemon=True).start()
+    return {"job_id": job["id"], "status": job["status"]}
+
+
+@app.get("/api/goldenview/jobs/{job_id}")
+def goldenview_job_status(job_id: str) -> dict:
+    return _job_snapshot(job_id)
+
+
+@app.get("/api/goldenview/file/download")
+def goldenview_file(path: str = Query(...)) -> Response:
+    file_path = Path(path)
+    try:
+        resolved = file_path.resolve()
+        base = GOLDENVIEW_EXPORT_DIR.resolve()
+        if base not in resolved.parents and base != resolved:
+            raise HTTPException(status_code=400, detail="Ungültiger Pfad.")
+        if not resolved.exists():
+            raise HTTPException(status_code=404, detail="Datei nicht gefunden.")
+        return FileResponse(resolved)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/goldenview/commit")
+def goldenview_commit(payload: dict = Body(None)) -> dict:
+    repo = GOLDENVIEW_EXPORT_DIR
+    if not (repo / ".git").exists():
+        raise HTTPException(status_code=400, detail="Repo nicht gefunden. Setze GOLDENVIEW_REPO_PATH.")
+    message = (payload or {}).get("message") or "GoldenView update"
+    query_id = (payload or {}).get("id")
+    try:
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-m", message], check=False, capture_output=True, text=True)
+        subprocess.run(["git", "-C", str(repo), "push"], check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or str(exc)).strip()
+        raise HTTPException(status_code=500, detail=detail) from exc
+    if query_id:
+        with _connect() as conn:
+            _init_goldenview_db(conn)
+            conn.execute(
+                f"UPDATE {GOLDENVIEW_QUERIES_TABLE} SET commit_at = datetime('now') WHERE id = ?",
+                (int(query_id),),
+            )
+            conn.commit()
+    return {"status": "ok"}
+
+
+@app.get("/api/goldenview/sync_status")
+def goldenview_sync_status() -> dict:
+    if not GITHUB_SYNC_TOKEN:
+        return {"status": "missing_token"}
+    headers = {"Authorization": f"Bearer {GITHUB_SYNC_TOKEN}", "Accept": "application/vnd.github+json"}
+    url = f"https://api.github.com/repos/{GITHUB_SYNC_REPO}/actions/workflows/{GITHUB_SYNC_WORKFLOW}/runs"
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.get(url, headers=headers, params={"per_page": 1})
+        if resp.status_code != 200:
+            return {"status": "error", "detail": resp.text}
+        data = resp.json()
+        runs = data.get("workflow_runs") or []
+        if not runs:
+            return {"status": "no_runs"}
+        run = runs[0]
+        return {
+            "status": run.get("status"),
+            "conclusion": run.get("conclusion"),
+            "created_at": run.get("created_at"),
+            "updated_at": run.get("updated_at"),
+            "html_url": run.get("html_url"),
+            "name": run.get("name"),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "detail": str(exc)}
+
+
+@app.post("/api/ask_m3_knowledge")
+@app.post("/api/ask_m3_knowledge/")
+def ask_m3_knowledge(payload: dict = Body(...), request: Request = None) -> dict:
+    if GPT_ACTION_API_KEY:
+        api_key = request.headers.get("x-api-key", "").strip() if request else ""
+        if api_key != GPT_ACTION_API_KEY:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+    question = str(payload.get("question") or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Frage fehlt.")
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY fehlt.")
+    if not OPENAI_VECTOR_STORE_ID:
+        raise HTTPException(status_code=500, detail="OPENAI_VECTOR_STORE_ID fehlt.")
+    try:
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        resp = client.responses.create(
+            model="gpt-4.1",
+            input=question,
+            tools=[
+                {
+                    "type": "file_search",
+                    "vector_store_ids": [OPENAI_VECTOR_STORE_ID],
+                    "max_num_results": 5,
+                }
+            ],
+            include=["file_search_call.results"],
+        )
+        output_text = getattr(resp, "output_text", None)
+        if output_text is None:
+            output_text = ""
+            for item in resp.output:
+                if item.get("type") == "message":
+                    for part in item.get("content", []):
+                        if part.get("type") == "output_text":
+                            output_text += part.get("text", "")
+        citations = []
+        for item in resp.output:
+            item_type = getattr(item, "type", None)
+            if item_type == "message":
+                content = getattr(item, "content", []) or []
+                for part in content:
+                    annotations = getattr(part, "annotations", []) or []
+                    for ann in annotations:
+                        if getattr(ann, "type", None) == "file_citation":
+                            citations.append(
+                                {
+                                    "file_id": getattr(ann, "file_id", None),
+                                    "filename": getattr(ann, "filename", None),
+                                }
+                            )
+        if not citations:
+            return {"answer": "Keine passende Quelle in der Wissensbasis gefunden.", "citations": []}
+        return {"answer": output_text, "citations": citations}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 # Serve frontend assets
 if FRONTEND_DIR.exists():
     app.mount(
         "/",
-        StaticFiles(directory=FRONTEND_DIR, html=True),
+        AuthStaticFiles(directory=FRONTEND_DIR, html=True),
         name="frontend",
     )
 else:
     @app.get("/")
     def placeholder() -> dict:
-        return {"message": "Frontend noch nicht angelegt. Lege Dateien in /frontend/ ab."}
+        return {"message": "Frontend noch nicht angelegt. Lege Dateien in apps/AppMFD/frontend/ ab."}

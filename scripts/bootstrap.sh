@@ -2,14 +2,25 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/lib/workspace_guard.sh"
+enforce_onedrive_workspace "$ROOT_DIR"
 ENV_FILE="$ROOT_DIR/.env"
 TEMPLATE_FILE="$ROOT_DIR/.env.template"
 VENV_DIR="$ROOT_DIR/.venv"
 REQ_FILE="$ROOT_DIR/python/requirements.txt"
 REQ_HASH_FILE="$VENV_DIR/.requirements.hash"
-DB_PATH="$ROOT_DIR/data/cache.db"
+SHARED_PKG_DIR="$ROOT_DIR/packages/sparepart-shared"
+MFDAPPS_HOME="${MFDAPPS_HOME:-$ROOT_DIR}"
+RUNTIME_ROOT_RAW="${MFDAPPS_RUNTIME_ROOT:-$ROOT_DIR/data}"
+if [[ "$RUNTIME_ROOT_RAW" = /* ]]; then
+  RUNTIME_ROOT="$RUNTIME_ROOT_RAW"
+else
+  RUNTIME_ROOT="$ROOT_DIR/$RUNTIME_ROOT_RAW"
+fi
+DB_PATH="$RUNTIME_ROOT/cache.db"
 
 echo "[bootstrap] Repository: $ROOT_DIR"
+echo "[bootstrap] Runtime root: $RUNTIME_ROOT"
 
 if [[ ! -f "$ENV_FILE" && -f "$TEMPLATE_FILE" ]]; then
   cp "$TEMPLATE_FILE" "$ENV_FILE"
@@ -56,7 +67,18 @@ if [[ "$NEED_INSTALL" == "1" ]]; then
   fi
 fi
 
-mkdir -p "$ROOT_DIR/data"
+if [[ -d "$SHARED_PKG_DIR" ]]; then
+  set +e
+  pip install --no-build-isolation -e "$SHARED_PKG_DIR"
+  SHARED_INSTALL_STATUS=$?
+  set -e
+  if [[ $SHARED_INSTALL_STATUS -ne 0 ]]; then
+    echo "[bootstrap] Hinweis: sparepart-shared konnte nicht per pip installiert werden (Status $SHARED_INSTALL_STATUS)."
+    echo "            Lokaler Start bleibt moeglich ueber PYTHONPATH."
+  fi
+fi
+
+mkdir -p "$RUNTIME_ROOT"
 touch "$DB_PATH"
 
 LOAD_ERP="${BOOTSTRAP_LOAD_ERP:-auto}"
@@ -115,7 +137,7 @@ fi
 
 if [[ "$NEED_LOAD_ERP" == "1" ]]; then
   set +e
-  "$VENV_DIR/bin/python" "$ROOT_DIR/python/load_erp_wagons.py"
+  "$VENV_DIR/bin/python" "$ROOT_DIR/python/load_erp_wagons.py" --sqlite-db "$DB_PATH"
   LOAD_STATUS=$?
   set -e
 

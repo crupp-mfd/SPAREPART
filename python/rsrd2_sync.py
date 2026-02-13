@@ -19,14 +19,14 @@ from zeep.helpers import serialize_object
 from zeep.transports import Transport
 
 try:  # pragma: no cover - script vs package execution
-    from .env_loader import load_project_dotenv
+    from .env_loader import get_runtime_root, load_project_dotenv
 except ImportError:  # type: ignore
-    from env_loader import load_project_dotenv  # type: ignore
+    from env_loader import get_runtime_root, load_project_dotenv  # type: ignore
 
 load_project_dotenv()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "cache.db"
+DEFAULT_DB_PATH = get_runtime_root() / "cache.db"
 
 BASE_WAGONS_TABLE = "rsrd_wagons"
 BASE_SNAPSHOTS_TABLE = "rsrd_wagon_snapshots"

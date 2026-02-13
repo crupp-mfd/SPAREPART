@@ -11,6 +11,13 @@ import re
 import unicodedata
 import zipfile
 
+try:  # pragma: no cover - script vs package execution
+    from .env_loader import get_runtime_root, load_project_dotenv
+except ImportError:  # type: ignore
+    from env_loader import get_runtime_root, load_project_dotenv  # type: ignore
+
+load_project_dotenv()
+
 
 @dataclass(frozen=True)
 class MappingRule:
@@ -49,10 +56,13 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 _MM_RE = re.compile(r"(\d+(?:[.,]\d+)?)mm")
 SKIP = object()
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_ROOT = get_runtime_root()
 
 
 def _find_upload_dataset_path() -> Path | None:
-    base = PROJECT_ROOT / "data" / "rsrd_upload_tool"
+    base = RUNTIME_ROOT / "rsrd_upload_tool"
+    if not base.exists():
+        base = PROJECT_ROOT / "data" / "rsrd_upload_tool"
     for candidate in base.glob("Schnittstelle RSRD*/RSRD2 - Informationen/RSRD Dataset v4.1_new.xlsx"):
         if candidate.exists():
             return candidate
@@ -326,6 +336,8 @@ def _owner_company_code(value: Any) -> int | None:
     text = _normalize_text(value)
     if text == "MFD RAIL":
         return 110601
+    if text == "3838":
+        return 110601
     return None
 
 
@@ -368,12 +380,18 @@ def _letter_marking(value: Any) -> str | None:
 
 def _combined_transport(value: Any) -> str | None:
     text = _normalize_text(value)
+    if not text:
+        return None
     if text == "CONTAINER":
         return "C"
     if text == "TW-SATTELAUFLIEGER_BA":
         return "N"
     if text == "TW-SATTELAUFLIEGER":
         return "P"
+    if text in {"SWAP-BODY CARRIER WAGONS", "SWAP BODY CARRIER WAGONS"}:
+        return "C"
+    if text in {"ROLLER-UNIT CARRIER WAGONS", "ROLLER UNIT CARRIER WAGONS"}:
+        return "B"
     return None
 
 
@@ -534,7 +552,7 @@ RULES: List[MappingRule] = [
         field="AdministrativeDataSet.OwnerCompanyCode",
         section="admin",
         path="OwnerCompanyCode",
-        getter=lambda row: _owner_company_code(row.get("WG_EIGENTUEMER")),
+        getter=lambda row: _owner_company_code(row.get("WG_EIGENTUEMER") or row.get("WG_HALTER_CODE")),
     ),
     MappingRule(
         field="AdministrativeDataSet.KeeperCompanyCode",
@@ -594,7 +612,7 @@ RULES: List[MappingRule] = [
         field="DesignDataSet.CombinedTransportWagonType",
         section="design",
         path="CombinedTransportWagonType",
-        getter=lambda row: _combined_transport(row.get("AB_TRAGWAGENTYP")),
+        getter=lambda row: _combined_transport(row.get("AB_KVTYP") or row.get("AB_TRAGWAGENTYP")),
     ),
     MappingRule(
         field="DesignDataSet.WagonNumberOfAxles",
@@ -774,7 +792,7 @@ RULES: List[MappingRule] = [
         field="DesignDataSet.BrakeBlock.CompositeBrakeBlockInstallationDate",
         section="design",
         path="BrakeBlock.CompositeBrakeBlockInstallationDate",
-        getter=lambda row: _parse_date(row.get("WG_INBETRIEBNAHME")),
+        getter=lambda row: _parse_date(row.get("WG_INBETRIEBNAHME") or row.get("WG_ZULASSDATUM")),
     ),
     MappingRule(
         field="DesignDataSet.MaxLengthOfLoad",
@@ -836,7 +854,7 @@ RULES: List[MappingRule] = [
         field="DesignDataSet.DateLastOverhaul",
         section="design",
         path="DateLastOverhaul",
-        getter=lambda row: _parse_date(row.get("WG_DATLETZG4_2") or row.get("WG_DATLETZG4_0")),
+        getter=lambda row: _parse_date(row.get("WG_DATLETZG4_0")),
     ),
     MappingRule(
         field="DesignDataSet.OverhaulValidityPeriod",
@@ -880,7 +898,7 @@ ERP_FIELDS: Dict[str, str] = {
     "AdministrativeDataSet.OutOfServiceFlag": "WG_AUSSERBETRIE",
     "AdministrativeDataSet.GCUWagon": "WG_AVVWAGEN",
     "DesignDataSet.LetterMarking": "WG_UIC_TYP",
-    "DesignDataSet.CombinedTransportWagonType": "AB_TRAGWAGENTYP",
+    "DesignDataSet.CombinedTransportWagonType": "AB_KVTYP",
     "DesignDataSet.WagonNumberOfAxles": "WG_ANZ_ACHSEN",
     "DesignDataSet.WheelDiameter": "DG_RS_NENNLKD",
     "DesignDataSet.WheelsetGauge": "WG_SPURWEITE",
@@ -909,7 +927,7 @@ ERP_FIELDS: Dict[str, str] = {
     "DesignDataSet.DerailmentDetectionDevice": "WG_ENTGLEISDET",
     "DesignDataSet.BrakeBlock.BrakeBlockName": "BR_SOHLEN_BEZEI, BR_ANZ_BREMSSOH, BR_BREMSSO_DIM",
     "DesignDataSet.BrakeBlock.CompositeBrakeBlockRetrofitted": "computed:false",
-    "DesignDataSet.BrakeBlock.CompositeBrakeBlockInstallationDate": "WG_INBETRIEBNAHME",
+    "DesignDataSet.BrakeBlock.CompositeBrakeBlockInstallationDate": "WG_INBETRIEBNAHME (Fallback: WG_ZULASSDATUM)",
     "DesignDataSet.MaxLengthOfLoad": "AB_LADELAENG_GE",
     "DesignDataSet.HeightOfLoadingPlaneUnladen": "WG_HOEH_LADKANT",
     "DesignDataSet.MaxGrossWeight": "WG_ZUL_GES_GEWI",
@@ -919,7 +937,7 @@ ERP_FIELDS: Dict[str, str] = {
     "DesignDataSet.TemperatureRange.MinTemp": "WG_TEMPBER_MIN",
     "DesignDataSet.TechnicalForwardingRestrictions": "WG_ABSTOS_AUFLA",
     "DesignDataSet.MaintenancePlanRef": "WG_IHREGIME",
-    "DesignDataSet.DateLastOverhaul": "WG_DATLETZG4_2, WG_DATLETZG4_0",
+    "DesignDataSet.DateLastOverhaul": "WG_DATLETZG4_0",
     "DesignDataSet.OverhaulValidityPeriod": "WG_REVPERIODE",
     "DesignDataSet.PermittedTolerance": "WG_REVFRISTVERL",
 }
@@ -998,6 +1016,7 @@ UPLOAD_FIELDS: Dict[str, str] = {
     "DesignDataSet.BrakeBlock.CompositeBrakeBlockInstallationDate": (
         "xsd:DesignDataSet/xsd:BrakeBlock/xsd:CompositeBrakeBlockInstallationDate"
     ),
+    "DesignDataSet.LoadTable.SpeedCategory": "xsd:DesignDataSet/xsd:LoadTable/xsd:SpeedCategory",
     "DesignDataSet.MaxLengthOfLoad": "xsd:DesignDataSet/xsd:MaxLengthOfLoad",
     "DesignDataSet.HeightOfLoadingPlaneUnladen": "xsd:DesignDataSet/xsd:HeightOfLoadingPlaneUnladen",
     "DesignDataSet.MaxGrossWeight": "xsd:DesignDataSet/xsd:MaxGrossWeight",
@@ -1035,22 +1054,65 @@ def _build_removable_accessories(row: Dict[str, Any]) -> List[Dict[str, Any]]:
     return items
 
 
-def _build_load_table(row: Dict[str, Any]) -> Tuple[int | None, Dict[str, List[float]]]:
+def _load_table_speed_categories(row: Dict[str, Any]) -> List[int]:
+    vmax = _parse_int(row.get("WG_VMAX"))
+    if vmax is None:
+        return [100, 120]
+    if vmax == 100:
+        return [100]
+    return [100, vmax]
+
+
+def _build_load_table(row: Dict[str, Any]) -> Tuple[int | None, List[int], Dict[str, List[float]]]:
     stars = _normalize_load_table_stars(row.get("AS_STERNE"))
+    speed_categories = _load_table_speed_categories(row)
     route_payloads: Dict[str, List[float]] = {}
     for route_class in ROUTE_CLASSES:
         col_100 = f"AS_{route_class}_100"
         col_120 = f"AS_{route_class}_120"
         value_100 = _parse_float(row.get(col_100))
         value_120 = _parse_float(row.get(col_120))
+        if value_100 is None and value_120 is None:
+            continue
         values: List[float] = []
-        if value_100 is not None and value_100 != 0:
-            values.append(value_100)
-        if value_120 is not None and value_120 != 0:
-            values.append(value_120)
-        if values:
+        for speed in speed_categories:
+            if speed == 100:
+                values.append(value_100 if value_100 is not None else 0.0)
+            elif speed == 120:
+                values.append(value_120 if value_120 is not None else 0.0)
+            else:
+                values.append(0.0)
+        if any(val != 0 for val in values):
             route_payloads[route_class] = values
-    return stars, route_payloads
+    return stars, speed_categories, route_payloads
+
+
+def _normalize_speed_categories(values: Any) -> List[Any]:
+    normalized: List[Any] = []
+    for item in _as_list(values):
+        if item is None or item == "":
+            continue
+        parsed = _parse_int(item)
+        normalized.append(parsed if parsed is not None else item)
+    return normalized
+
+
+def _select_payloads(values: List[Any] | None, source_speeds: List[Any], target_speeds: List[Any]) -> List[Any] | None:
+    if values is None:
+        return None
+    if not target_speeds or not source_speeds:
+        return values
+    selected: List[Any] = []
+    for speed in target_speeds:
+        try:
+            idx = source_speeds.index(speed)
+        except ValueError:
+            return values
+        if idx < len(values):
+            selected.append(values[idx])
+        else:
+            selected.append(0)
+    return selected
 
 
 def _normalize_load_table_stars(value: Any) -> int | None:
@@ -1172,6 +1234,25 @@ def _lists_equal(left: List[Any], right: List[Any]) -> bool:
     return True
 
 
+def _is_zeroish(value: Any) -> bool:
+    num = _to_number(value)
+    if num is not None:
+        return abs(num) < 1e-9
+    text = _normalize_text(value)
+    return text in {"0", "0.0"}
+
+
+def _normalize_list_for_compare(values: List[Any]) -> List[Any]:
+    cleaned = []
+    for value in values:
+        if value is None or value == "":
+            continue
+        if _is_zeroish(value):
+            continue
+        cleaned.append(value)
+    return cleaned
+
+
 def _values_equal(left: Any, right: Any) -> bool:
     if left is None and right is None:
         return True
@@ -1180,7 +1261,22 @@ def _values_equal(left: Any, right: Any) -> bool:
     if right is None and left == "":
         return True
     if isinstance(left, list) or isinstance(right, list):
-        return _lists_equal(_as_list(left), _as_list(right))
+        left_list = _normalize_list_for_compare(_as_list(left))
+        right_list = _normalize_list_for_compare(_as_list(right))
+        if isinstance(left, list) and not isinstance(right, list):
+            return any(_values_equal(item, right) for item in left_list) if left_list else False
+        if isinstance(right, list) and not isinstance(left, list):
+            return any(_values_equal(left, item) for item in right_list) if right_list else False
+        if not left_list and not right_list:
+            return True
+        # ERP is leading: accept extra values in RSRD as long as all ERP values exist in RSRD list.
+        remaining = right_list[:]
+        for item in left_list:
+            match_index = next((idx for idx, cand in enumerate(remaining) if _values_equal(item, cand)), None)
+            if match_index is None:
+                return False
+            remaining.pop(match_index)
+        return True
     left_date = _normalize_date(left)
     right_date = _normalize_date(right)
     if left_date is not None or right_date is not None:
@@ -1198,7 +1294,14 @@ def _values_equal(left: Any, right: Any) -> bool:
 
 def _normalize_output(value: Any) -> Any:
     if isinstance(value, list):
-        return [_normalize_output(v) for v in value]
+        cleaned = []
+        for v in value:
+            if v is None or v == "":
+                continue
+            if _is_zeroish(v):
+                continue
+            cleaned.append(_normalize_output(v))
+        return cleaned
     if value is None:
         return None
     if isinstance(value, (datetime, date)):
@@ -1222,9 +1325,11 @@ def build_erp_payload(row: Dict[str, Any]) -> Dict[str, Any]:
     if removable:
         design["RemovableAccessories"] = removable
 
-    stars, route_payloads = _build_load_table(row)
-    if stars is not None or route_payloads:
+    stars, speed_categories, route_payloads = _build_load_table(row)
+    if stars is not None or route_payloads or speed_categories:
         load_table: Dict[str, Any] = {}
+        if speed_categories:
+            load_table["SpeedCategory"] = speed_categories
         if stars is not None:
             load_table["LoadTableStars"] = stars
         if route_payloads:
@@ -1267,8 +1372,6 @@ def compare_erp_to_rsrd(
 ) -> List[Dict[str, Any]]:
     def resolve_erp_field_name(field: str) -> str:
         if field == "DesignDataSet.DateLastOverhaul":
-            if _parse_date(erp_row.get("WG_DATLETZG4_2")):
-                return "WG_DATLETZG4_2"
             return "WG_DATLETZG4_0"
         return ERP_FIELDS.get(field, "")
 
@@ -1314,11 +1417,33 @@ def compare_erp_to_rsrd(
             }
         )
 
-    stars, erp_route_payloads = _build_load_table(erp_row)
+    stars, speed_categories, erp_route_payloads = _build_load_table(erp_row)
     rsrd_load_table = (rsrd_design.get("LoadTable") or [{}])
     if isinstance(rsrd_load_table, list) and rsrd_load_table:
         rsrd_load_table = rsrd_load_table[0]
     if isinstance(rsrd_load_table, dict):
+        rsrd_speed_raw = rsrd_load_table.get("SpeedCategory") or []
+        rsrd_speed = _normalize_speed_categories(rsrd_speed_raw)
+        erp_speed = speed_categories or []
+        vmax = _parse_int(erp_row.get("WG_VMAX"))
+        compare_speed = erp_speed
+        compare_rsrd_speed = rsrd_speed
+        if vmax is not None and vmax in rsrd_speed:
+            compare_speed = [vmax]
+            compare_rsrd_speed = [vmax]
+        if include_all or not _values_equal(compare_speed, compare_rsrd_speed):
+            diffs.append(
+                {
+                    "field": "DesignDataSet.LoadTable.SpeedCategory",
+                    "erp_field": "WG_VMAX",
+                    "rsrd_field": "DesignDataSet.LoadTable.SpeedCategory",
+                    "upload_field": "xsd:DesignDataSet/xsd:LoadTable/xsd:SpeedCategory",
+                    "upload_requirement": _upload_requirement_for("DesignDataSet.LoadTable.SpeedCategory"),
+                    "erp": _normalize_output(compare_speed),
+                    "rsrd": _normalize_output(compare_rsrd_speed),
+                    "equal": _values_equal(compare_speed, compare_rsrd_speed),
+                }
+            )
         rsrd_stars = _normalize_load_table_stars(rsrd_load_table.get("LoadTableStars"))
         stars_equal = _values_equal(stars, rsrd_stars)
         if include_all or not stars_equal:
@@ -1344,6 +1469,8 @@ def compare_erp_to_rsrd(
         for route_class in ROUTE_CLASSES:
             erp_values = erp_route_payloads.get(route_class)
             rsrd_values = rsrd_payloads.get(route_class)
+            erp_values = _select_payloads(erp_values, erp_speed, compare_speed)
+            rsrd_values = _select_payloads(rsrd_values, rsrd_speed, compare_speed)
             if erp_values is None and rsrd_values is None and not include_all:
                 continue
             equal = _values_equal(erp_values, rsrd_values)

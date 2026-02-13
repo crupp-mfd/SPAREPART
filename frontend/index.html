@@ -3,59 +3,88 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MFD Automation</title>
-    <link rel="stylesheet" href="/ids-enterprise.css?v=1" />
-    <link rel="stylesheet" href="/styles.css?v=18" />
+    <title>MFDApps Einstieg</title>
+    <style>
+      :root {
+        --bg: #f3f6fb;
+        --panel: #ffffff;
+        --text: #122033;
+        --muted: #4a5d78;
+        --border: #d7dfec;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        background: linear-gradient(135deg, #f3f6fb 0%, #e7eef8 100%);
+        color: var(--text);
+        min-height: 100vh;
+      }
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 28px 18px 40px;
+      }
+      h1 { margin: 0 0 8px; font-size: 30px; }
+      p { margin: 0 0 20px; color: var(--muted); }
+      .grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+      a.card {
+        display: block;
+        padding: 14px;
+        border-radius: 10px;
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--border);
+        text-decoration: none;
+      }
+      .sub { font-size: 13px; color: var(--muted); }
+    </style>
   </head>
-  <body class="start-page">
-    <main class="start-shell">
-      <section class="start-hero">
-        <div class="start-brand">
-          <div class="start-eyebrow">MFD Rail</div>
-          <h1 class="start-title">MFD Automation</h1>
-          <p class="start-subtitle">
-            Bitte wähle eine Anwendung. Von hier aus kannst du direkt in Objektstrukturtausch,
-            RSRD2 oder den Bremsenumbau springen.
-          </p>
-        </div>
-        <div class="start-grid">
-          <a class="app-card" href="/rsrd2.html">
-            <div class="app-card-media">
-              <img src="/bilder/rsrd2.svg" alt="RSRD2 Sync" />
-            </div>
-            <div class="app-card-body">
-              <h2>RSRD2 Sync</h2>
-              <p>Wagenabgleich und Sync der RSRD2 Daten.</p>
-            </div>
-          </a>
-          <a class="app-card" href="/wagenumbau.html">
-            <div class="app-card-media">
-              <img src="/bilder/bremsenumbau.svg" alt="Bremsenumbau" />
-            </div>
-            <div class="app-card-body">
-              <h2>Bremsenumbau</h2>
-              <p>Umbau von S auf SS und Umklassifizierung von Wagen.</p>
-            </div>
-          </a>
-          <a class="app-card" href="/objektstrukturtausch.html">
-            <div class="app-card-media">
-              <img src="/bilder/objektstrukturtausch.svg" alt="Objektstrukturtausch" />
-            </div>
-            <div class="app-card-body">
-              <h2>Objektstrukturtausch</h2>
-              <p>Teile in einer Objektstruktur tauschen.</p>
-            </div>
-          </a>
-          <a class="app-card" href="/teilenummer.html">
-            <div class="app-card-media">
-              <img src="/bilder/TeileNummer.svg" alt="Teilenummer ändern" />
-            </div>
-            <div class="app-card-body">
-              <h2>Teilenummer ändern</h2>
-              <p>Teilenummern für Komponenten aktualisieren.</p>
-            </div>
-          </a>
-        </div>
+  <body>
+    <main>
+      <h1>MFDApps</h1>
+      <p>Einstiegspunkt auf die getrennten App-Deployments.</p>
+      <section class="grid">
+        <a class="card" href="/portal/">
+          <div><strong>AppMFD</strong></div>
+          <div class="sub">Portal</div>
+        </a>
+        <a class="card" href="/objektstrukturtausch.html">
+          <div><strong>AppObjektstruktur</strong></div>
+          <div class="sub">Objektstrukturtausch</div>
+        </a>
+        <a class="card" href="/wagenumbau.html">
+          <div><strong>AppBremsenumbau</strong></div>
+          <div class="sub">Wagenumbau</div>
+        </a>
+        <a class="card" href="/teilenummer.html">
+          <div><strong>AppTeilenummer</strong></div>
+          <div class="sub">Teilenummern</div>
+        </a>
+        <a class="card" href="/wagensuche.html">
+          <div><strong>AppWagensuche</strong></div>
+          <div class="sub">Wagensuche</div>
+        </a>
+        <a class="card" href="/rsrd2.html">
+          <div><strong>AppRSRD</strong></div>
+          <div class="sub">RSRD Vergleiche</div>
+        </a>
+        <a class="card" href="/gpt-goldenview.html">
+          <div><strong>AppGoldenView</strong></div>
+          <div class="sub">GoldenView</div>
+        </a>
+        <a class="card" href="/M3BRIDGE.html">
+          <div><strong>AppSQL-API</strong></div>
+          <div class="sub">Bridge/Query</div>
+        </a>
+        <a class="card" href="/api/mehrkilometer/status">
+          <div><strong>AppMehrkilometer</strong></div>
+          <div class="sub">Mehrkilometer API</div>
+        </a>
       </section>
     </main>
   </body>
