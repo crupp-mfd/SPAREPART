@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from python.web_server import app as legacy_app
@@ -21,7 +21,7 @@ def healthz() -> dict:
 
 
 @app.get("/", include_in_schema=False)
-def index() -> FileResponse | JSONResponse:
+def index() -> Response:
     target = PORTAL_DIR / "index.html"
     if target.exists():
         return FileResponse(target)
@@ -29,7 +29,7 @@ def index() -> FileResponse | JSONResponse:
 
 
 @app.get("/favicon.ico", include_in_schema=False)
-def favicon() -> FileResponse | JSONResponse:
+def favicon() -> Response:
     target = PORTAL_DIR / "favicon.ico"
     if target.exists():
         return FileResponse(target)
@@ -37,7 +37,7 @@ def favicon() -> FileResponse | JSONResponse:
 
 
 @app.get("/portal-config.js", include_in_schema=False)
-def portal_config_js() -> FileResponse | JSONResponse:
+def portal_config_js() -> Response:
     target = PORTAL_DIR / "portal-config.js"
     if target.exists():
         return FileResponse(target, media_type="application/javascript")

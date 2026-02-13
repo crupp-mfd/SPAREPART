@@ -390,8 +390,6 @@ async def _auth_middleware(request: Request, call_next):
 
 @app.on_event("startup")
 def _prepare_env_tables() -> None:
-    if not DB_PATH.exists():
-        return
     with _connect() as conn:
         _ensure_env_tables(conn)
         _init_goldenview_db(conn)
@@ -435,7 +433,9 @@ def _init_goldenview_db(conn: sqlite3.Connection) -> None:
 
 def _connect() -> sqlite3.Connection:
     if not DB_PATH.exists():
-        raise HTTPException(status_code=500, detail=f"SQLite DB nicht gefunden: {DB_PATH}")
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DB_PATH.touch()
+        logging.info("SQLite DB neu angelegt: %s", DB_PATH)
     return create_sqlite_connection(DB_PATH)
 
 
